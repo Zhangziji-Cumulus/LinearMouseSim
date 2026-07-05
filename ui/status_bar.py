@@ -32,6 +32,28 @@ class StatusBar(tk.Frame):
         self.status_canvas.pack(side=tk.LEFT)
         self._update_status_indicator(False)
         
+        vjoy_frame = ttk.Frame(self)
+        vjoy_frame.pack(side=tk.LEFT, padx=(10, 5), pady=5)
+        
+        self.vjoy_label = ttk.Label(
+            vjoy_frame, text='vJoy:', 
+            foreground=Theme.ON_SURFACE_VARIANT, 
+            background=Theme.SURFACE_CONTAINER_LOW, 
+            font=(Theme.FONT_FAMILY, 10)
+        )
+        self.vjoy_label.pack(side=tk.LEFT, padx=(0, 4))
+        
+        self.vjoy_canvas = tk.Canvas(vjoy_frame, width=16, height=16, bg=Theme.SURFACE_CONTAINER_LOW, highlightthickness=0)
+        self.vjoy_canvas.pack(side=tk.LEFT)
+        
+        self.vjoy_status_text = ttk.Label(
+            vjoy_frame, text='检测中', 
+            foreground=Theme.ON_SURFACE_VARIANT, 
+            background=Theme.SURFACE_CONTAINER_LOW, 
+            font=(Theme.FONT_FAMILY, 10)
+        )
+        self.vjoy_status_text.pack(side=tk.LEFT, padx=(4, 0))
+        
         center_frame = ttk.Frame(self)
         center_frame.pack(side=tk.LEFT, padx=30, pady=5)
         
@@ -98,6 +120,20 @@ class StatusBar(tk.Frame):
         """设置模拟状态文本"""
         self.sim_status_value.config(text=status_text)
         self.sim_status_value.config(foreground=Theme.ERROR if is_error else Theme.ON_SURFACE)
+    
+    def set_vjoy_status(self, available, status_text):
+        """设置vJoy状态显示"""
+        self.vjoy_canvas.delete('all')
+        if available:
+            color = Theme.TERTIARY
+            glow = '#00cc6a'
+        else:
+            color = Theme.ERROR
+            glow = '#cc3333'
+        
+        self.vjoy_canvas.create_oval(1, 1, 15, 15, fill=glow, outline='', stipple='gray50')
+        self.vjoy_canvas.create_oval(3, 3, 13, 13, fill=color, outline=Theme.OUTLINE_VARIANT, width=2)
+        self.vjoy_status_text.config(text=status_text)
 
 
 if __name__ == '__main__':

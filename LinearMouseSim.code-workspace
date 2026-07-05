@@ -4,5 +4,12 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			"/^if \\(Test-Path \\.\\\\venv\\\\Scripts\\\\python\\.exe\\) \\{ \\.\\\\venv\\\\Scripts\\\\python\\.exe --version \\} else \\{ Write-Output 'no_venv' \\}$/": {
+				"approve": true,
+				"matchCommandLine": true
+			}
+		}
+	}
 }

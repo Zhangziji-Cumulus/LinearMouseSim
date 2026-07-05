@@ -79,6 +79,12 @@ class SteeringAlgorithm:
         
         # 方向反转参数
         self.reverse_direction = kwargs.get('reverse_direction', False)
+
+        # 辅助回中参数
+        # 当用户从大角度向中心回打时，额外加速归中，帮助找到中心位置
+        self.assist_threshold = kwargs.get('assist_threshold', 80.0)    # 累积位移超过此值才启用
+        self.assist_strength = kwargs.get('assist_strength', 2.5)       # 回中辅助倍率
+        self.assist_near_center = kwargs.get('assist_near_center', 15.0)# 进入此范围后停止辅助
         
         # 三段式灵敏度分区参数
         self.deadzone_start = max(0, kwargs.get('deadzone_start', 0))
@@ -163,6 +169,12 @@ class SteeringAlgorithm:
             self.exponential_power = self._clamp(value, 1.0, 3.0)
         elif param_name == 'reverse_direction':
             self.reverse_direction = bool(value)
+        elif param_name == 'assist_threshold':
+            self.assist_threshold = max(0.0, value)
+        elif param_name == 'assist_strength':
+            self.assist_strength = max(1.0, value)
+        elif param_name == 'assist_near_center':
+            self.assist_near_center = max(0.0, value)
         elif param_name == 'deadzone_start':
             self.deadzone_start = max(0, value)
         elif param_name == 'deadzone_end':
@@ -304,7 +316,7 @@ class SteeringAlgorithm:
         - accumulated_x 映射到方向盘角度
         - 松手后通过衰减系数实现自动回正
         """
-        if not self.reverse_direction:
+        if self.reverse_direction:
             delta_x = -delta_x
             
         abs_delta = abs(delta_x)
@@ -337,6 +349,23 @@ class SteeringAlgorithm:
         # 将增量位移乘以灵敏度系数后累加到 accumulated_x
         # 灵敏度系数已包含DPI换算，确保不同DPI鼠标手感一致
         self.accumulated_x += delta_x * self.sensitivity
+
+        # 辅助回中：当从大角度向中心回打时，额外加速归中
+        # 目的是帮助用户更容易找到中心位置，同时不影响从中心向外打的操控
+        if abs(self.accumulated_x) > self.assist_threshold:
+            # 判断是否正在回中：delta_x 与 accumulated_x 方向相反
+            moving_toward_center = (delta_x < 0 and self.accumulated_x > 0) or (delta_x > 0 and self.accumulated_x < 0)
+            if moving_toward_center:
+                # 额外减少 accumulated_x，加速归中
+                assist_extra = abs(delta_x) * self.sensitivity * (self.assist_strength - 1.0)
+                if self.accumulated_x > 0:
+                    self.accumulated_x -= assist_extra
+                else:
+                    self.accumulated_x += assist_extra
+
+                # 如果辅助后已进入近中心区，直接归零
+                if abs(self.accumulated_x) < self.assist_near_center:
+                    self.accumulated_x = 0.0
         
         # 步骤3：回正衰减（如果鼠标停止移动）
         # 即使有增量输入，停止移动时也应用衰减防止角度过大

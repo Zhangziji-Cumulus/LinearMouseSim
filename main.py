@@ -8,7 +8,7 @@ import ctypes.wintypes
 
 from core import (
     get_mouse_position,
-    VJoyOutput,
+    VGamepadOutput,
     SteeringStateMachine,
     SteeringAlgorithm,
     release_cursor_safety
@@ -43,7 +43,7 @@ def close_mutex():
 class LinearMouseSim:
     def __init__(self):
         self.config = ConfigManager()
-        self.vjoy = VJoyOutput()
+        self.vjoy = VGamepadOutput()
         steering_params = self.config.get_steering_params()
         steering_params['dpi'] = self.config.get('mouse.dpi', 800)
         self.steering_algorithm = SteeringAlgorithm(**steering_params)
@@ -74,6 +74,11 @@ class LinearMouseSim:
         self.last_mouse_x = 0
         self.last_mouse_y = 0
         self.is_moving = False
+
+        # 鼠标按键常量
+        self._VK_LBUTTON = 0x01
+        self._VK_RBUTTON = 0x02
+        self._user32 = ctypes.windll.user32
         
         atexit.register(self.cleanup)
         
@@ -197,6 +202,12 @@ class LinearMouseSim:
         if self.main_window:
             self.main_window.update_parameter_display()
     
+    def _get_mouse_buttons(self):
+        """读取鼠标按键状态，返回 (左键按下, 右键按下)"""
+        left_down = bool(self._user32.GetAsyncKeyState(self._VK_LBUTTON) & 0x8000)
+        right_down = bool(self._user32.GetAsyncKeyState(self._VK_RBUTTON) & 0x8000)
+        return left_down, right_down
+
     def update_steering_params(self, params):
         for key, value in params.items():
             if key == 'dpi':
@@ -235,8 +246,16 @@ class LinearMouseSim:
                 )
                 
                 self.state_machine.current_angle = angle
-                self.vjoy.set_steering_angle(angle, self.config.get('steering.max_angle', 90))
-                
+
+                # 读取鼠标按键：左键=刹车，右键=油门
+                left_down, right_down = self._get_mouse_buttons()
+                brake = 1.0 if left_down else 0.0
+                gas = 1.0 if right_down else 0.0
+
+                # 同时发送方向盘角度 + 油门/刹车
+                normalized_angle = max(-1.0, min(1.0, angle / self.config.get('steering.max_angle', 90)))
+                self.vjoy.set_axes(left_x=normalized_angle, right_trigger=gas, left_trigger=brake)
+
                 if self.main_window:
                     self.main_window.update_wheel_angle(angle)
                     self.main_window.update_status_bar_angle(angle)
@@ -244,14 +263,21 @@ class LinearMouseSim:
             time.sleep(0.005)
     
     def run(self):
-        vjoy_available = check_vjoy_installed() and self.vjoy.initialize()
-        
-        if not vjoy_available:
-            print("vJoy不可用，进入模拟模式（仅测试UI和算法）")
+        self.vjoy.initialize()
+        controller_available = self.vjoy.is_initialized()
+
+        if not controller_available:
+            status_text = self.vjoy.last_status
+            print(f"虚拟手柄不可用，进入模拟模式; 当前状态: {status_text}")
+        else:
+            status_text = self.vjoy.last_status
+            print(f"虚拟手柄可用，当前状态: {status_text}")
         
         self.main_window = MainWindow(self)
+        self.main_window.set_vjoy_status(controller_available, status_text)
         self.main_window.update_status(self.state_machine.get_state())
         self.main_window.param_panel.set_hotkey_manager(self.hotkey_manager)
+        self.main_window.param_panel.set_on_change_callback(self.update_steering_params)
         self.main_window.update_parameter_display()
         
         loop_thread = threading.Thread(target=self.main_loop, daemon=True)

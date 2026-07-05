@@ -15,6 +15,8 @@ class VJoyOutput:
         self.min_value = 0
         self.max_value = 32767
         self.center_value = (self.max_value - self.min_value) // 2
+        self.deadzone = 0.02
+        self.last_status = '未初始化'
     
     def _force_release_device(self):
         if not PYVJOY_AVAILABLE:
@@ -31,20 +33,25 @@ class VJoyOutput:
     
     def initialize(self):
         if not PYVJOY_AVAILABLE:
+            self.last_status = 'pyvjoy库未安装'
             print("pyvjoy库未安装，vJoy功能不可用")
             return False
-        
+
         self._force_release_device()
-        
+
         for attempt in range(3):
             try:
                 self.joy = pyvjoy.VJoyDevice(self.device_id)
+                self.last_status = '初始化成功'
+                print(f"vJoy初始化成功，设备ID={self.device_id}")
                 return True
             except Exception as e:
+                self.last_status = f'初始化失败: {e}'
                 print(f"vJoy初始化尝试 {attempt+1}/3 失败: {e}")
                 self._force_release_device()
                 time.sleep(0.2)
-        
+
+        self.last_status = 'vJoy驱动未就绪或设备不可用'
         print("vJoy初始化失败，请确保vJoy已正确安装")
         return False
     
@@ -63,8 +70,13 @@ class VJoyOutput:
     def set_steering_angle(self, angle, max_angle=90):
         if not self.joy:
             return
-        normalized = max(-1.0, min(1.0, angle / max_angle))
-        axis_value = ((normalized + 1.0) / 2.0) * (self.max_value - self.min_value) + self.min_value
+
+        if abs(angle) <= max_angle * self.deadzone:
+            axis_value = self.center_value
+        else:
+            normalized = max(-1.0, min(1.0, angle / max_angle))
+            axis_value = ((normalized + 1.0) / 2.0) * (self.max_value - self.min_value) + self.min_value
+
         self.set_axis_value('x', axis_value)
     
     def reset(self):
@@ -76,6 +88,7 @@ class VJoyOutput:
         if self.joy:
             self.reset()
             self.joy = None
+        self.last_status = '已关闭'
 
 def test_vjoy_output():
     vjoy = VJoyOutput()

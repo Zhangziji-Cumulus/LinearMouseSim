@@ -360,6 +360,7 @@ class SteeringWheelCanvas(tk.Canvas):
             right_arrow_x - arrow_size, center_y + arrow_size,
             fill=right_color, outline=right_color, tag='right_arrow'
         )
+
     
     def _animate(self):
         if not self._animation_active:
@@ -500,6 +501,9 @@ class MainWindow(tk.Tk):
     
     def set_simulation_status(self, is_running):
         self.status_bar.set_simulation_status(is_running)
+    
+    def set_vjoy_status(self, available, status_text):
+        self.status_bar.set_vjoy_status(available, status_text)
     
     def update_status(self, state):
         is_active = state == 'ON'
