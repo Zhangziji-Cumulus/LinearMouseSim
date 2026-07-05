@@ -72,7 +72,7 @@ class SteeringWheelCanvas(tk.Canvas):
             rx1, ry1 = self._rotate_point(x1, y1, angle_rad)
             rx2, ry2 = self._rotate_point(x2, y2, angle_rad)
             
-            color = '#e94560' if abs(tick_angle) >= 90 else '#4a90d9'
+            color = '#e94560' if abs(tick_angle) >= self._max_angle else '#4a90d9'
             self.create_line(
                 center_x + rx1, center_y + ry1,
                 center_x + rx2, center_y + ry2,
@@ -195,12 +195,16 @@ class MainWindow(tk.Tk):
         self.wheel_canvas = SteeringWheelCanvas(
             right_area, bg='#0f0f1a', highlightthickness=0
         )
+        if self.app:
+            self.wheel_canvas.set_max_angle(self.app.config.get('steering.max_angle', 90))
         self.wheel_canvas.pack(fill=tk.BOTH, expand=True)
         
         self.status_bar = StatusBar(self)
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
     
     def update_wheel_angle(self, angle):
+        if self.app:
+            self.wheel_canvas.set_max_angle(self.app.config.get('steering.max_angle', 90))
         self.wheel_canvas.set_angle(angle)
     
     def update_status_bar_angle(self, angle):
@@ -248,8 +252,10 @@ class MainWindow(tk.Tk):
                 'max_angle': params.get('max_angle', 90),
                 'dpi': self.app.config.get('mouse.dpi', 800),
                 'return_speed': params.get('return_speed', 0.0),
-                'curve_type': params.get('curve_type', 'linear')
+                'curve_type': params.get('curve_type', 'linear'),
+                'reverse_direction': params.get('reverse_direction', False)
             })
+            self.wheel_canvas.set_max_angle(params.get('max_angle', 90))
     
     def run(self):
         self.mainloop()

@@ -21,7 +21,8 @@ DEFAULT_CONFIG = {
         'max_angle': 90,
         'return_speed': 0.0,
         'curve_type': 'linear',
-        'exponential_power': 1.5
+        'exponential_power': 1.5,
+        'reverse_direction': False
     },
     'three_zone': {
         'deadzone_start': 0,

@@ -77,6 +77,9 @@ class SteeringAlgorithm:
         self.curve_type = kwargs.get('curve_type', 'linear')
         self.exponential_power = self._clamp(kwargs.get('exponential_power', 1.5), 1.0, 3.0)
         
+        # 方向反转参数
+        self.reverse_direction = kwargs.get('reverse_direction', False)
+        
         # 三段式灵敏度分区参数
         self.deadzone_start = max(0, kwargs.get('deadzone_start', 0))
         self.deadzone_end = max(self.deadzone_start, kwargs.get('deadzone_end', 3))
@@ -158,6 +161,8 @@ class SteeringAlgorithm:
             self.curve_type = value if value in valid_curves else 'linear'
         elif param_name == 'exponential_power':
             self.exponential_power = self._clamp(value, 1.0, 3.0)
+        elif param_name == 'reverse_direction':
+            self.reverse_direction = bool(value)
         elif param_name == 'deadzone_start':
             self.deadzone_start = max(0, value)
         elif param_name == 'deadzone_end':
@@ -284,6 +289,7 @@ class SteeringAlgorithm:
             处理后的方向盘角度（浮点数，范围：-max_angle 到 +max_angle）
             
         处理流程：
+        0. 方向反转：如果启用反向，反转 delta_x 符号
         1. 死区过滤：如果|delta_x| < deadzone，不累积增量
         2. 增量累积：accumulated_x += delta_x × 灵敏度系数
         3. 回正衰减：当鼠标停止移动时，accumulated_x *= (1 - return_speed)
@@ -298,6 +304,9 @@ class SteeringAlgorithm:
         - accumulated_x 映射到方向盘角度
         - 松手后通过衰减系数实现自动回正
         """
+        if not self.reverse_direction:
+            delta_x = -delta_x
+            
         abs_delta = abs(delta_x)
         
         # 步骤1：死区过滤

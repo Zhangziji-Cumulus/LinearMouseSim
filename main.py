@@ -213,6 +213,7 @@ class LinearMouseSim:
         self.main_window = MainWindow(self)
         self.main_window.update_status(self.state_machine.get_state())
         self.main_window.param_panel.set_hotkey_manager(self.hotkey_manager)
+        self.main_window.update_parameter_display()
         
         loop_thread = threading.Thread(target=self.main_loop, daemon=True)
         loop_thread.start()

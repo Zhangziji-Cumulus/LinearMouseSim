@@ -175,6 +175,13 @@ class ParameterPanel(tk.Frame):
         )
         self._sliders['return_speed'].pack(fill=tk.X, padx=10)
         
+        self._reverse_var = tk.BooleanVar(value=False)
+        self._reverse_checkbox = ttk.Checkbutton(
+            inner, text='反转方向盘方向（鼠标左移=顺时针，右移=逆时针）',
+            variable=self._reverse_var, command=self._on_parameter_change
+        )
+        self._reverse_checkbox.pack(fill=tk.X, padx=10, pady=(5, 10))
+        
         curve_frame = ttk.Frame(inner)
         curve_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
         
@@ -287,7 +294,8 @@ class ParameterPanel(tk.Frame):
             'max_angle': self._sliders['max_angle'].get_value(),
             'dpi': self._sliders['dpi'].get_value(),
             'return_speed': self._sliders['return_speed'].get_value() / 100.0,
-            'curve_type': self._curve_var.get()
+            'curve_type': self._curve_var.get(),
+            'reverse_direction': self._reverse_var.get()
         }
     
     def set_parameters(self, params):
@@ -299,6 +307,8 @@ class ParameterPanel(tk.Frame):
                 self._sliders[key].set_value(value)
         if 'curve_type' in params:
             self._curve_var.set(params['curve_type'])
+        if 'reverse_direction' in params:
+            self._reverse_var.set(bool(params['reverse_direction']))
     
     def set_hotkey_manager(self, hotkey_manager):
         """设置热键管理器"""
