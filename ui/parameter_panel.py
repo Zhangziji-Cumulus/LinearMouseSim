@@ -10,35 +10,45 @@ class ParameterSlider(tk.Frame):
     """参数滑块组件"""
     
     def __init__(self, parent, label_text, min_val, max_val, default_val, 
-                 resolution=0.1, unit='', callback=None):
+                 resolution=0.1, unit='', callback=None, snap_points=None, snap_tolerance=15):
         super().__init__(parent)
         
         self._callback = callback
         self._unit = unit
+        self._snap_points = snap_points or []
+        self._snap_tolerance = snap_tolerance
+        self._min_val = min_val
+        self._max_val = max_val
         
-        # 配置背景
-        self.configure(bg='#1a1a2e')
+        self.configure(bg='#16162a')
         
-        # 标签
-        self.label = ttk.Label(self, text=label_text, foreground='#ffffff', background='#1a1a2e')
-        self.label.pack(fill=tk.X, pady=(5, 2))
+        self.label = ttk.Label(self, text=label_text, foreground='#8888aa', background='#16162a', font=('Segoe UI', 10))
+        self.label.pack(fill=tk.X, pady=(8, 3))
         
-        # 滑块
+        self.slider_container = tk.Frame(self, bg='#16162a')
+        self.slider_container.pack(fill=tk.X, pady=(0, 2))
+        
+        self._snap_canvas = tk.Canvas(self.slider_container, bg='#16162a', highlightthickness=0, height=14)
+        self._snap_canvas.pack(fill=tk.X, pady=(0, 0))
+        
         self.slider = ttk.Scale(
-            self, from_=min_val, to=max_val, value=default_val,
+            self.slider_container, from_=min_val, to=max_val, value=default_val,
             orient=tk.HORIZONTAL, command=self._on_slider_change
         )
         self.slider.pack(fill=tk.X, pady=(0, 2))
         
-        # 数值显示
+        self.slider.bind('<ButtonRelease-1>', self._on_slider_release)
+        
         value_frame = ttk.Frame(self)
         value_frame.pack(fill=tk.X)
         
         self.value_label = ttk.Label(
             value_frame, text=f'{default_val:.1f}{unit}', 
-            foreground='#4a90d9', background='#1a1a2e', font=('Arial', 10, 'bold')
+            foreground='#4a90d9', background='#16162a', font=('Segoe UI', 11, 'bold')
         )
         self.value_label.pack(side=tk.LEFT)
+        
+        self.slider.after(100, self._draw_snap_markers)
     
     def _on_slider_change(self, value):
         """滑块值变化事件"""
@@ -46,6 +56,62 @@ class ParameterSlider(tk.Frame):
         self.value_label.config(text=f'{float_val:.1f}{self._unit}')
         if self._callback:
             self._callback(float_val)
+    
+    def _on_slider_release(self, event):
+        """滑块释放事件，处理吸附逻辑"""
+        if not self._snap_points:
+            return
+        
+        current_val = self.slider.get()
+        snapped_val = self._snap_to_nearest(current_val)
+        
+        if snapped_val is not None and abs(snapped_val - current_val) > 0.01:
+            self.set_value(snapped_val)
+    
+    def _snap_to_nearest(self, value):
+        """吸附到最近的吸附点"""
+        nearest = None
+        min_distance = float('inf')
+        
+        for point in self._snap_points:
+            distance = abs(point - value)
+            if distance <= self._snap_tolerance and distance < min_distance:
+                min_distance = distance
+                nearest = point
+        
+        return nearest
+    
+    def _draw_snap_markers(self):
+        """在滑块下方绘制吸附点标记"""
+        if not self._snap_points:
+            return
+        
+        canvas_width = self._snap_canvas.winfo_width()
+        if canvas_width < 10:
+            self.slider.after(50, self._draw_snap_markers)
+            return
+        
+        self._snap_canvas.delete('all')
+        
+        range_val = self._max_val - self._min_val
+        if range_val <= 0:
+            return
+        
+        for point in self._snap_points:
+            if self._min_val <= point <= self._max_val:
+                x_pos = ((point - self._min_val) / range_val) * canvas_width
+                # 绘制三角形标记
+                self._snap_canvas.create_polygon(
+                    x_pos, 0,
+                    x_pos - 4, 8,
+                    x_pos + 4, 8,
+                    fill='#e94560', outline=''
+                )
+                # 绘制角度值标签
+                self._snap_canvas.create_text(
+                    x_pos, 10,
+                    text=f'{int(point)}', fill='#e94560', font=('Arial', 7)
+                )
     
     def get_value(self):
         """获取当前值"""
@@ -70,9 +136,9 @@ class ParameterPanel(tk.Frame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         
-        self.configure(bg='#1a1a2e')
+        self.configure(bg='#16162a')
         
-        self._canvas = tk.Canvas(self, bg='#1a1a2e', highlightthickness=0)
+        self._canvas = tk.Canvas(self, bg='#16162a', highlightthickness=0)
         self._scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self._canvas.yview)
         self._inner_frame = ttk.Frame(self._canvas)
         
@@ -116,17 +182,18 @@ class ParameterPanel(tk.Frame):
         
         title_label = ttk.Label(
             inner, text='参数设置', 
-            foreground='#ffffff', background='#1a1a2e',
-            font=('Arial', 14, 'bold')
+            foreground='#ffffff', background='#16162a',
+            font=('Segoe UI', 14, 'bold')
         )
-        title_label.pack(fill=tk.X, pady=(10, 10), padx=10)
+        title_label.pack(fill=tk.X, pady=(15, 15), padx=10)
         
         preset_frame = ttk.Frame(inner)
         preset_frame.pack(fill=tk.X, padx=10, pady=(0, 15))
         
         preset_label = ttk.Label(
             preset_frame, text='游戏预设', 
-            foreground='#ffffff', background='#1a1a2e'
+            foreground='#8888aa', background='#16162a',
+            font=('Segoe UI', 10)
         )
         preset_label.pack(fill=tk.X, pady=(0, 5))
         
@@ -158,8 +225,10 @@ class ParameterPanel(tk.Frame):
         self._sliders['deadzone'].pack(fill=tk.X, padx=10)
         
         self._sliders['max_angle'] = ParameterSlider(
-            inner, '最大舵角', 30, 180, 90, resolution=1, unit='°',
-            callback=self._on_parameter_change
+            inner, '最大舵角', 30, 720, 90, resolution=1, unit='°',
+            callback=self._on_parameter_change,
+            snap_points=[180, 360, 540, 720],
+            snap_tolerance=15
         )
         self._sliders['max_angle'].pack(fill=tk.X, padx=10)
         
@@ -207,7 +276,8 @@ class ParameterPanel(tk.Frame):
         
         hotkey_label = ttk.Label(
             self._hotkey_frame, text='快捷键配置', 
-            foreground='#ffffff', background='#1a1a2e'
+            foreground='#8888aa', background='#16162a',
+            font=('Segoe UI', 10)
         )
         hotkey_label.pack(fill=tk.X, pady=(5, 5))
         
@@ -229,14 +299,14 @@ class ParameterPanel(tk.Frame):
             
             hk_label = ttk.Label(
                 hk_frame, text=label_text, width=12,
-                foreground='#ffffff', background='#1a1a2e'
+                foreground='#cccccc', background='#16162a', font=('Segoe UI', 9)
             )
             hk_label.pack(side=tk.LEFT)
             
             display_var = tk.StringVar(value='')
             display_label = ttk.Label(
                 hk_frame, textvariable=display_var, width=6,
-                foreground='#4a90d9', background='#1a1a2e', font=('Arial', 10, 'bold')
+                foreground='#4a90d9', background='#16162a', font=('Segoe UI', 10, 'bold')
             )
             display_label.pack(side=tk.LEFT, padx=(10, 5))
             

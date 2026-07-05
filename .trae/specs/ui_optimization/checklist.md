@@ -1,0 +1,8 @@
+- [x] Checkpoint 1: Max angle slider range is 30-720° in parameter_panel.py
+- [x] Checkpoint 2: Auto-snap works correctly for all common angles (180, 360, 540, 720) with 15° tolerance
+- [x] Checkpoint 3: Visual markers are visible on the max angle slider at snap points
+- [x] Checkpoint 4: Steering wheel canvas has no visible flickering during rotation
+- [x] Checkpoint 5: UI features modern elements (gradients, shadows, smooth transitions)
+- [x] Checkpoint 6: Steering wheel displays angles >180° correctly with rotation indicators
+- [x] Checkpoint 7: Configuration system correctly saves and loads max_angle values up to 720°
+- [x] Checkpoint 8: All existing functionality remains intact after changes

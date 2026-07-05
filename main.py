@@ -2,6 +2,9 @@ import sys
 import time
 import threading
 import atexit
+import signal
+import ctypes
+import ctypes.wintypes
 
 from core import (
     get_mouse_position,
@@ -14,6 +17,28 @@ from ui import MainWindow, SteeringWheelCanvas, StatusBar, ParameterPanel, OSDMa
 from config import ConfigManager, PresetManager
 from hotkey import HotkeyManager
 from utils import check_vjoy_installed
+
+MUTEX_NAME = "Global\\LinearMouseSim_Mutex"
+_h_mutex = None
+
+def check_single_instance():
+    global _h_mutex
+    kernel32 = ctypes.windll.kernel32
+    h_mutex = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    last_error = kernel32.GetLastError()
+    
+    if last_error == 183:
+        kernel32.CloseHandle(h_mutex)
+        return False
+    
+    _h_mutex = h_mutex
+    return True
+
+def close_mutex():
+    global _h_mutex
+    if _h_mutex is not None:
+        ctypes.windll.kernel32.CloseHandle(_h_mutex)
+        _h_mutex = None
 
 class LinearMouseSim:
     def __init__(self):
@@ -51,6 +76,20 @@ class LinearMouseSim:
         self.is_moving = False
         
         atexit.register(self.cleanup)
+        
+        self._setup_signal_handlers()
+    
+    def _setup_signal_handlers(self):
+        def signal_handler(signum, frame):
+            print(f"收到信号 {signum}，正在退出...")
+            self.cleanup()
+            sys.exit(0)
+        
+        try:
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+        except (OSError, ValueError):
+            pass
     
     def on_toggle(self):
         self.state_machine.toggle()
@@ -227,12 +266,24 @@ class LinearMouseSim:
         self.hotkey_manager.stop_listener()
         self.osd_manager.close()
         release_cursor_safety()
+        close_mutex()
         
         # 清理托盘资源
         if self.main_window and self.main_window.tray_manager:
             self.main_window.tray_manager.cleanup()
 
 if __name__ == '__main__':
+    if not check_single_instance():
+        print("程序已在运行中，同一时间只能启动一个实例。")
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        from tkinter import messagebox
+        messagebox.showwarning("LinearMouseSim", "程序已在运行中，同一时间只能启动一个实例。")
+        root.destroy()
+        sys.exit(0)
+    
     try:
         app = LinearMouseSim()
         app.run()

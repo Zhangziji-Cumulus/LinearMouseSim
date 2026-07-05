@@ -10,58 +10,59 @@ class StatusBar(tk.Frame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         
-        # 配置样式
-        self.configure(bg='#1a1a2e')
+        self.configure(bg='#12122a')
         
-        # 初始化组件
         self._init_components()
     
     def _init_components(self):
         """初始化状态栏组件"""
-        # 左侧：开关状态指示灯
         left_frame = ttk.Frame(self)
         left_frame.pack(side=tk.LEFT, padx=15, pady=5)
         
-        self.status_label = ttk.Label(left_frame, text='状态:', foreground='#ffffff', background='#1a1a2e')
+        self.status_label = ttk.Label(left_frame, text='状态:', foreground='#8888aa', background='#12122a', font=('Segoe UI', 10))
         self.status_label.pack(side=tk.LEFT, padx=(0, 5))
         
-        # 状态指示灯
-        self.status_canvas = tk.Canvas(left_frame, width=16, height=16, bg='#1a1a2e', highlightthickness=0)
+        self.status_canvas = tk.Canvas(left_frame, width=20, height=20, bg='#12122a', highlightthickness=0)
         self.status_canvas.pack(side=tk.LEFT)
         self._update_status_indicator(False)
         
-        # 中间：角度显示
         center_frame = ttk.Frame(self)
-        center_frame.pack(side=tk.LEFT, padx=20, pady=5)
+        center_frame.pack(side=tk.LEFT, padx=30, pady=5)
         
-        self.angle_label = ttk.Label(center_frame, text='角度:', foreground='#ffffff', background='#1a1a2e')
-        self.angle_label.pack(side=tk.LEFT, padx=(0, 5))
+        self.angle_label = ttk.Label(center_frame, text='当前角度:', foreground='#8888aa', background='#12122a', font=('Segoe UI', 10))
+        self.angle_label.pack(side=tk.LEFT, padx=(0, 8))
         
-        self.angle_value = ttk.Label(center_frame, text='0.0°', foreground='#4a90d9', background='#1a1a2e', font=('Arial', 12, 'bold'))
+        self.angle_value = ttk.Label(center_frame, text='0.0°', foreground='#4a90d9', background='#12122a', font=('Segoe UI', 14, 'bold'))
         self.angle_value.pack(side=tk.LEFT)
         
-        # 右侧：模拟状态
         right_frame = ttk.Frame(self)
         right_frame.pack(side=tk.RIGHT, padx=15, pady=5)
         
-        self.sim_status_label = ttk.Label(right_frame, text='模拟状态:', foreground='#ffffff', background='#1a1a2e')
+        self.sim_status_label = ttk.Label(right_frame, text='模拟:', foreground='#8888aa', background='#12122a', font=('Segoe UI', 10))
         self.sim_status_label.pack(side=tk.LEFT, padx=(0, 5))
         
-        self.sim_status_value = ttk.Label(right_frame, text='未启动', foreground='#e94560', background='#1a1a2e')
+        self.sim_status_value = ttk.Label(right_frame, text='未启动', foreground='#e94560', background='#12122a', font=('Segoe UI', 10, 'bold'))
         self.sim_status_value.pack(side=tk.LEFT)
     
     def _update_status_indicator(self, is_active):
         """更新状态指示灯"""
         self.status_canvas.delete('all')
-        color = '#00ff00' if is_active else '#ff0000'
-        # 绘制圆形指示灯
-        self.status_canvas.create_oval(2, 2, 14, 14, fill=color, outline='#333333')
+        
+        if is_active:
+            color = '#00ff88'
+            glow_color = '#00ff88'
+        else:
+            color = '#ff4444'
+            glow_color = '#ff4444'
+        
+        self.status_canvas.create_oval(1, 1, 19, 19, fill=glow_color, outline='', stipple='gray50')
+        self.status_canvas.create_oval(4, 4, 16, 16, fill=color, outline='#333355', width=1)
     
     def set_active(self, is_active):
         """设置激活状态"""
         self._update_status_indicator(is_active)
         self.sim_status_value.config(text='运行中' if is_active else '未启动')
-        self.sim_status_value.config(foreground='#00ff00' if is_active else '#e94560')
+        self.sim_status_value.config(foreground='#00ff88' if is_active else '#ff4444')
     
     def set_angle(self, angle):
         """设置角度显示"""
@@ -70,7 +71,7 @@ class StatusBar(tk.Frame):
     def set_sim_status(self, status_text, is_error=False):
         """设置模拟状态文本"""
         self.sim_status_value.config(text=status_text)
-        self.sim_status_value.config(foreground='#e94560' if is_error else '#ffffff')
+        self.sim_status_value.config(foreground='#ff4444' if is_error else '#ffffff')
 
 
 if __name__ == '__main__':

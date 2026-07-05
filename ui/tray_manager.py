@@ -72,9 +72,9 @@ class TrayManager:
         
         def on_exit(icon, item):
             """退出程序"""
-            icon.stop()
             if self.app:
                 self.app.cleanup()
+            icon.stop()
             self.root.quit()
             self.root.destroy()
         
@@ -238,9 +238,9 @@ class TrayManager:
     
     def _on_exit(self):
         """退出程序"""
-        self.cleanup()
         if self.app:
             self.app.cleanup()
+        self.cleanup()
         self.root.quit()
         self.root.destroy()
     

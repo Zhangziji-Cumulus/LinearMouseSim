@@ -68,7 +68,7 @@ class SteeringAlgorithm:
         self.dpi = self._clamp(kwargs.get('dpi', 800), 100, 25600)
         
         # 角度限制参数
-        self.max_angle = self._clamp(kwargs.get('max_angle', 90), 30, 180)
+        self.max_angle = self._clamp(kwargs.get('max_angle', 90), 30, 720)
         
         # 回正惯性参数
         self.return_speed = self._clamp(kwargs.get('return_speed', 0.0), 0.0, 1.0)
@@ -153,7 +153,7 @@ class SteeringAlgorithm:
         elif param_name == 'deadzone':
             self.deadzone = self._clamp(value, 0, 20)
         elif param_name == 'max_angle':
-            self.max_angle = self._clamp(value, 30, 180)
+            self.max_angle = self._clamp(value, 30, 720)
         elif param_name == 'return_speed':
             self.return_speed = self._clamp(value, 0.0, 1.0)
         elif param_name == 'curve_type':

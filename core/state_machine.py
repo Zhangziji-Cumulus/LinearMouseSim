@@ -21,6 +21,8 @@ class SteeringStateMachine:
         self.original_cursor_y = 0
         # 线程锁，确保状态切换的线程安全
         self.state_lock = threading.Lock()
+        # 关闭标志，用于立即停止光标锁定
+        self._turning_off = False
         
     def start(self):
         self.running = True
@@ -29,15 +31,18 @@ class SteeringStateMachine:
     
     def stop(self):
         self.running = False
+        with self.state_lock:
+            self._turning_off = True
+        self.cursor_manager.unlock()
+        release_cursor_safety()
         self.turn_off()
     
     def _cursor_lock_loop(self):
         while self.running:
-            # 使用锁确保状态读取的线程安全
             with self.state_lock:
                 current_state = self.state
             
-            if current_state == 'ON':
+            if current_state == 'ON' and not self._turning_off:
                 mouse_x, _ = get_mouse_position()
                 delta = mouse_x - self.last_mouse_x
                 if abs(delta) > 0:
@@ -60,6 +65,7 @@ class SteeringStateMachine:
             self.current_angle = 0.0
             self.mouse_moved = False
             self.mouse_delta_x = 0
+            self._turning_off = False
             
             set_mouse_position(self.center_x, self.center_y)
             
@@ -73,14 +79,19 @@ class SteeringStateMachine:
                 return
             
             self.state = 'OFF'
+            self._turning_off = True
         
-        time.sleep(0.03)
+        self.cursor_manager.unlock()
+        release_cursor_safety()
+        
+        time.sleep(0.02)
         
         set_mouse_position(self.original_cursor_x, self.original_cursor_y)
         
         self.vjoy_output.reset()
         self.current_angle = 0.0
         self.mouse_moved = False
+        self._turning_off = False
         print("模拟已关闭")
     
     def toggle(self):
