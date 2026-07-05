@@ -10,11 +10,13 @@ class HotkeyManager:
         self.last_trigger_time = {}
         self.cooldown_ms = 200
         self.enabled = True
+        self.wheel_adjust_key = 'ctrl'
+        self.wheel_adjust_active = False
         
     def register_callback(self, action, callback):
         self.callbacks[action] = callback
     
-    def _trigger_action(self, action):
+    def _trigger_action(self, action, *args):
         if not self.enabled:
             return
         
@@ -27,20 +29,70 @@ class HotkeyManager:
         
         if action in self.callbacks:
             try:
-                self.callbacks[action]()
+                if args:
+                    self.callbacks[action](*args)
+                else:
+                    self.callbacks[action]()
             except Exception as e:
                 print(f"热键回调执行失败 {action}: {e}")
+    
+    def _on_wheel(self, event):
+        """处理滚轮事件"""
+        if not self.enabled:
+            return
+        
+        # 检查是否按住调节键
+        if not keyboard.is_pressed(self.wheel_adjust_key):
+            return
+        
+        # 滚轮向上增加灵敏度，向下降低灵敏度
+        if event.event_type == 'down':
+            # 滚轮向下滚动
+            self._trigger_action('wheel_decrease_sensitivity')
+        elif event.event_type == 'up':
+            # 滚轮向上滚动
+            self._trigger_action('wheel_increase_sensitivity')
     
     def load_hotkeys(self):
         self.unregister_all()
         
         hotkey_config = self.config_manager.get('hotkeys', {})
-        actions = ['toggle', 'increase_sensitivity', 'decrease_sensitivity', 'reset_steering']
+        actions = [
+            'toggle', 
+            'increase_sensitivity', 
+            'decrease_sensitivity', 
+            'reset_steering',
+            'sensitivity_preset_1',
+            'sensitivity_preset_2',
+            'sensitivity_preset_3',
+            'cycle_curve'
+        ]
         
         for action in actions:
             hotkey = hotkey_config.get(action, '')
             if hotkey:
                 self.register_hotkey(action, hotkey)
+        
+        # 加载滚轮调节键配置
+        self.wheel_adjust_key = hotkey_config.get('wheel_adjust', 'ctrl')
+        
+        # 注册滚轮事件监听
+        keyboard.on_scroll(self._on_scroll)
+    
+    def _on_scroll(self, event):
+        """处理滚轮滚动事件"""
+        if not self.enabled:
+            return
+        
+        # 检查是否按住调节键
+        if not keyboard.is_pressed(self.wheel_adjust_key):
+            return
+        
+        # 滚轮向上增加灵敏度，向下降低灵敏度
+        if event.delta > 0:
+            self._trigger_action('wheel_increase_sensitivity')
+        elif event.delta < 0:
+            self._trigger_action('wheel_decrease_sensitivity')
     
     def register_hotkey(self, action, hotkey):
         try:
@@ -57,6 +109,12 @@ class HotkeyManager:
             except Exception:
                 pass
         self.hotkeys = {}
+        
+        # 移除滚轮事件监听
+        try:
+            keyboard.unhook_all()
+        except Exception:
+            pass
     
     def set_hotkey(self, action, hotkey):
         if action in self.hotkeys:
@@ -66,6 +124,10 @@ class HotkeyManager:
                 pass
         
         self.config_manager.set_hotkey(action, hotkey)
+        
+        if action == 'wheel_adjust':
+            self.wheel_adjust_key = hotkey
+            return True
         
         if hotkey:
             try:
@@ -80,6 +142,8 @@ class HotkeyManager:
             return True
     
     def get_hotkey(self, action):
+        if action == 'wheel_adjust':
+            return self.wheel_adjust_key
         return self.hotkeys.get(action, '')
     
     def set_cooldown(self, ms):
@@ -115,14 +179,41 @@ if __name__ == '__main__':
     def on_reset_steering():
         print("重置方向盘")
     
+    def on_preset_1():
+        print("切换灵敏度预设1")
+    
+    def on_preset_2():
+        print("切换灵敏度预设2")
+    
+    def on_preset_3():
+        print("切换灵敏度预设3")
+    
+    def on_cycle_curve():
+        print("切换灵敏度曲线")
+    
+    def on_wheel_increase():
+        print("滚轮增加灵敏度")
+    
+    def on_wheel_decrease():
+        print("滚轮降低灵敏度")
+    
     hotkey_manager.register_callback('toggle', on_toggle)
     hotkey_manager.register_callback('increase_sensitivity', on_increase_sensitivity)
     hotkey_manager.register_callback('decrease_sensitivity', on_decrease_sensitivity)
     hotkey_manager.register_callback('reset_steering', on_reset_steering)
+    hotkey_manager.register_callback('sensitivity_preset_1', on_preset_1)
+    hotkey_manager.register_callback('sensitivity_preset_2', on_preset_2)
+    hotkey_manager.register_callback('sensitivity_preset_3', on_preset_3)
+    hotkey_manager.register_callback('cycle_curve', on_cycle_curve)
+    hotkey_manager.register_callback('wheel_increase_sensitivity', on_wheel_increase)
+    hotkey_manager.register_callback('wheel_decrease_sensitivity', on_wheel_decrease)
     
     hotkey_manager.load_hotkeys()
     
     print("热键监听器已启动，按 = 切换状态，按 ESC 退出")
+    print("按住 Ctrl + 滚轮调节灵敏度")
+    print("F5/F6/F7 切换灵敏度预设")
+    print("F8 切换灵敏度曲线")
     
     try:
         keyboard.wait('esc')

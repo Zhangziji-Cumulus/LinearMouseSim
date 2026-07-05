@@ -16,6 +16,11 @@ class SteeringStateMachine:
         self.mouse_moved = False
         self.last_mouse_x = 0
         self.mouse_delta_x = 0
+        # 保存原始光标位置，用于关闭模拟时恢复
+        self.original_cursor_x = 0
+        self.original_cursor_y = 0
+        # 线程锁，确保状态切换的线程安全
+        self.state_lock = threading.Lock()
         
     def start(self):
         self.running = True
@@ -28,7 +33,11 @@ class SteeringStateMachine:
     
     def _cursor_lock_loop(self):
         while self.running:
-            if self.state == 'ON':
+            # 使用锁确保状态读取的线程安全
+            with self.state_lock:
+                current_state = self.state
+            
+            if current_state == 'ON':
                 mouse_x, _ = get_mouse_position()
                 delta = mouse_x - self.center_x
                 if abs(delta) > 0:
@@ -38,29 +47,40 @@ class SteeringStateMachine:
             time.sleep(0.01)
     
     def turn_on(self):
-        if self.state == 'ON':
-            return
-        
-        self.base_x = self.center_x
-        self.base_y = self.center_y
-        self.last_mouse_x = self.center_x
-        self.current_angle = 0.0
-        self.mouse_moved = False
-        self.mouse_delta_x = 0
-        
-        try:
-            self.cursor_manager.lock_to_center()
-            set_mouse_position(self.center_x, self.center_y)
-        except Exception as e:
-            print(f"光标锁定失败: {e}")
-        
-        self.state = 'ON'
-        self.vjoy_output.set_steering_angle(0)
-        print("模拟已开启")
+        with self.state_lock:
+            if self.state == 'ON':
+                return
+            
+            # 保存开启前的原始光标位置
+            self.original_cursor_x, self.original_cursor_y = get_mouse_position()
+            
+            self.base_x = self.center_x
+            self.base_y = self.center_y
+            self.last_mouse_x = self.center_x
+            self.current_angle = 0.0
+            self.mouse_moved = False
+            self.mouse_delta_x = 0
+            
+            try:
+                self.cursor_manager.lock_to_center()
+                set_mouse_position(self.center_x, self.center_y)
+            except Exception as e:
+                print(f"光标锁定失败: {e}")
+            
+            self.state = 'ON'
+            self.vjoy_output.set_steering_angle(0)
+            print("模拟已开启")
     
     def turn_off(self):
-        if self.state == 'OFF':
-            return
+        with self.state_lock:
+            if self.state == 'OFF':
+                return
+            
+            # 先将状态改为 OFF，防止 _cursor_lock_loop 线程继续重置鼠标位置
+            self.state = 'OFF'
+        
+        # 等待一小段时间确保锁线程已退出锁定逻辑（使用更长时间确保线程安全）
+        time.sleep(0.03)
         
         try:
             self.cursor_manager.unlock()
@@ -68,8 +88,10 @@ class SteeringStateMachine:
             print(f"光标解锁失败: {e}")
             release_cursor_safety()
         
+        # 恢复光标到开启前的原始位置
+        set_mouse_position(self.original_cursor_x, self.original_cursor_y)
+        
         self.vjoy_output.reset()
-        self.state = 'OFF'
         self.current_angle = 0.0
         self.mouse_moved = False
         print("模拟已关闭")
@@ -92,7 +114,8 @@ class SteeringStateMachine:
         return self.current_angle
     
     def get_state(self):
-        return self.state
+        with self.state_lock:
+            return self.state
     
     def get_current_angle(self):
         return self.current_angle

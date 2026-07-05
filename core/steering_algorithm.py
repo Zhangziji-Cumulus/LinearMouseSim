@@ -22,6 +22,13 @@ class SteeringAlgorithm:
     转向算法核心类
     
     将鼠标水平位移转换为方向盘角度，支持多种灵敏度曲线和滤波算法
+    
+    DPI联动换算机制：
+    - 不同DPI的鼠标在相同物理移动距离下产生的像素位移不同
+    - 高DPI鼠标移动相同距离会产生更多像素，导致转向更灵敏
+    - 换算公式：effective_sensitivity = base_sensitivity / (dpi / 800)
+    - 以800DPI为基准，高DPI自动降低有效灵敏度，低DPI自动提高有效灵敏度
+    - 确保不同DPI鼠标在相同物理移动距离下产生相同的转向角度
     """
     
     def __init__(self, **kwargs):
@@ -42,11 +49,16 @@ class SteeringAlgorithm:
             linear_end: 线性区结束 (像素)，默认500
             saturation_start: 饱和区起始 (像素)，默认500
             saturation_end: 饱和区结束 (像素)，默认1000
+            dpi: 鼠标DPI (100-25600)，默认800（基准DPI）
         """
         # 灵敏度参数
-        self.sensitivity = self._clamp(kwargs.get('sensitivity', 1.0), 0.1, 5.0)
+        self.base_sensitivity = self._clamp(kwargs.get('sensitivity', 1.0), 0.1, 5.0)
         self.smoothing_factor = self._clamp(kwargs.get('smoothing_factor', 0.3), 0.0, 1.0)
         self.deadzone = self._clamp(kwargs.get('deadzone', 3), 0, 20)
+        
+        # DPI参数（用于灵敏度自动换算）
+        # 基准DPI为800，不同DPI会自动调整有效灵敏度
+        self.dpi = self._clamp(kwargs.get('dpi', 800), 100, 25600)
         
         # 角度限制参数
         self.max_angle = self._clamp(kwargs.get('max_angle', 90), 30, 180)
@@ -74,6 +86,24 @@ class SteeringAlgorithm:
         valid_curves = ['linear', 'exponential', 'logarithmic', 's_curve']
         if self.curve_type not in valid_curves:
             self.curve_type = 'linear'
+    
+    @property
+    def sensitivity(self):
+        """
+        计算经过DPI换算后的有效灵敏度
+        
+        换算公式：effective_sensitivity = base_sensitivity / (dpi / 800)
+        
+        数学原理：
+        - 假设基准DPI=800，灵敏度=1.0
+        - 当DPI=1600（2倍基准），鼠标移动相同物理距离会产生2倍像素
+        - 需要将灵敏度除以2，才能保持相同的转向角度
+        - 反之，DPI=400（0.5倍基准），需要将灵敏度乘以2
+        
+        返回：
+            经过DPI换算后的有效灵敏度系数
+        """
+        return self.base_sensitivity / (self.dpi / 800.0)
     
     def _clamp(self, value, min_val, max_val):
         """
@@ -113,7 +143,9 @@ class SteeringAlgorithm:
             value: 参数值
         """
         if param_name == 'sensitivity':
-            self.sensitivity = self._clamp(value, 0.1, 5.0)
+            self.base_sensitivity = self._clamp(value, 0.1, 5.0)
+        elif param_name == 'dpi':
+            self.dpi = self._clamp(value, 100, 25600)
         elif param_name == 'smoothing_factor':
             self.smoothing_factor = self._clamp(value, 0.0, 1.0)
         elif param_name == 'deadzone':
@@ -296,6 +328,11 @@ class SteeringAlgorithm:
             normalized_angle = self._apply_curve(normalized_angle)
             # 映射回角度范围
             raw_angle = normalized_angle * self.max_angle
+        
+        # 步骤4.5：应用经过DPI换算的有效灵敏度系数
+        # 有效灵敏度 = 基础灵敏度 / (DPI / 800)
+        # 确保不同DPI鼠标在相同物理移动距离下产生相同的转向角度
+        raw_angle *= self.sensitivity
             
         # 步骤5：线性插值平滑
         # current_angle = alpha * raw_angle + (1-alpha) * previous_angle
@@ -411,5 +448,63 @@ if __name__ == '__main__':
         sa_exp.set_base_x(500)
         angle = sa_exp.update(500 + 200)
         print(f"指数幂次={power}, delta_x=200, 角度={angle:.2f}")
+    
+    # 测试场景7：DPI联动换算测试
+    print("\n--- 测试场景7：DPI联动换算测试 ---")
+    print("基础灵敏度=1.0，基准DPI=800")
+    print("换算公式：effective_sensitivity = base_sensitivity / (dpi / 800)")
+    print("-" * 60)
+    
+    test_dpis = [400, 800, 1200, 1600, 3200, 6400]
+    for dpi in test_dpis:
+        sa_dpi = SteeringAlgorithm(
+            sensitivity=1.0,
+            dpi=dpi,
+            max_angle=90,
+            smoothing_factor=1.0  # 禁用平滑以便看清灵敏度效果
+        )
+        sa_dpi.set_base_x(500)
+        # 计算理论有效灵敏度
+        expected_sensitivity = 1.0 / (dpi / 800.0)
+        print(f"DPI={dpi}, 基础灵敏度={sa_dpi.base_sensitivity:.2f}, 有效灵敏度={sa_dpi.sensitivity:.4f}, 理论值={expected_sensitivity:.4f}")
+    
+    # 测试场景8：不同DPI下手感一致性测试
+    print("\n--- 测试场景8：不同DPI下手感一致性测试 ---")
+    print("模拟相同物理移动距离（假设800DPI下移动100像素）")
+    print("-" * 60)
+    
+    # 基准情况：800DPI，移动100像素
+    sa_800 = SteeringAlgorithm(sensitivity=1.0, dpi=800, max_angle=90, smoothing_factor=1.0)
+    sa_800.set_base_x(500)
+    angle_800 = sa_800.update(600)  # delta_x = 100
+    print(f"DPI=800, 移动100像素, 角度={angle_800:.2f}")
+    
+    # 高DPI情况：1600DPI，移动200像素（相同物理距离）
+    sa_1600 = SteeringAlgorithm(sensitivity=1.0, dpi=1600, max_angle=90, smoothing_factor=1.0)
+    sa_1600.set_base_x(500)
+    angle_1600 = sa_1600.update(700)  # delta_x = 200（相同物理距离）
+    print(f"DPI=1600, 移动200像素（相同物理距离）, 角度={angle_1600:.2f}")
+    
+    # 低DPI情况：400DPI，移动50像素（相同物理距离）
+    sa_400 = SteeringAlgorithm(sensitivity=1.0, dpi=400, max_angle=90, smoothing_factor=1.0)
+    sa_400.set_base_x(500)
+    angle_400 = sa_400.update(550)  # delta_x = 50（相同物理距离）
+    print(f"DPI=400, 移动50像素（相同物理距离）, 角度={angle_400:.2f}")
+    
+    # 测试场景9：动态修改DPI参数测试
+    print("\n--- 测试场景9：动态修改DPI参数测试 ---")
+    sa_dynamic = SteeringAlgorithm(sensitivity=1.0, dpi=800, max_angle=90, smoothing_factor=1.0)
+    sa_dynamic.set_base_x(500)
+    
+    print(f"初始DPI={sa_dynamic.dpi}, 有效灵敏度={sa_dynamic.sensitivity:.4f}")
+    
+    sa_dynamic.set_parameter('dpi', 1600)
+    print(f"修改DPI=1600后, 有效灵敏度={sa_dynamic.sensitivity:.4f}")
+    
+    sa_dynamic.set_parameter('dpi', 400)
+    print(f"修改DPI=400后, 有效灵敏度={sa_dynamic.sensitivity:.4f}")
+    
+    sa_dynamic.set_parameter('sensitivity', 2.0)
+    print(f"修改基础灵敏度=2.0后, 有效灵敏度={sa_dynamic.sensitivity:.4f}")
     
     print("\n=== 测试完成 ===")

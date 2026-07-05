@@ -3,6 +3,7 @@ from tkinter import ttk
 import math
 from .status_bar import StatusBar
 from .parameter_panel import ParameterPanel
+from .tray_manager import TrayManager
 
 
 class SteeringWheelCanvas(tk.Canvas):
@@ -160,12 +161,18 @@ class MainWindow(tk.Tk):
     def __init__(self, app=None):
         super().__init__()
         self.app = app
+        self.tray_manager = None
         
         self.title('LinearMouseSim - 方向盘模拟器')
         self.geometry('900x700')
         self.configure(bg='#0f0f1a')
         
+        # 绑定最小化事件
+        self.protocol('WM_DELETE_WINDOW', self._on_close)
+        self.bind('<Unmap>', self._on_minimize)
+        
         self._init_components()
+        self._init_tray()
     
     def _init_components(self):
         main_frame = ttk.Frame(self, padding=10)
@@ -201,6 +208,35 @@ class MainWindow(tk.Tk):
     
     def update_status(self, state):
         self.status_bar.set_active(state == 'ON')
+        # 更新托盘图标状态
+        if self.tray_manager:
+            self.tray_manager.update_status(state == 'ON')
+    
+    def _init_tray(self):
+        """初始化系统托盘"""
+        self.tray_manager = TrayManager(self, self.app)
+    
+    def _on_close(self):
+        """关闭窗口时最小化到托盘"""
+        self.hide_to_tray()
+    
+    def _on_minimize(self, event):
+        """窗口最小化时隐藏到托盘"""
+        # 检查是否是最小化操作（不是关闭或其他操作）
+        if self.state() == 'iconic':
+            self.hide_to_tray()
+    
+    def hide_to_tray(self):
+        """隐藏窗口到托盘"""
+        self.withdraw()
+        if self.tray_manager:
+            self.tray_manager.hide_window()
+    
+    def show_from_tray(self):
+        """从托盘显示窗口"""
+        self.deiconify()
+        self.lift()
+        self.focus_force()
     
     def update_parameter_display(self):
         if self.app:
@@ -210,6 +246,7 @@ class MainWindow(tk.Tk):
                 'smoothing_factor': params.get('smoothing_factor', 0.3),
                 'deadzone': params.get('deadzone', 3),
                 'max_angle': params.get('max_angle', 90),
+                'dpi': self.app.config.get('mouse.dpi', 800),
                 'return_speed': params.get('return_speed', 0.0),
                 'curve_type': params.get('curve_type', 'linear')
             })

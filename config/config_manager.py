@@ -7,7 +7,12 @@ DEFAULT_CONFIG = {
         'toggle': '}' ,
         'increase_sensitivity': '+',
         'decrease_sensitivity': '-',
-        'reset_steering': '0'
+        'reset_steering': '0',
+        'sensitivity_preset_1': 'f5',
+        'sensitivity_preset_2': 'f6',
+        'sensitivity_preset_3': 'f7',
+        'cycle_curve': 'f8',
+        'wheel_adjust': 'ctrl'
     },
     'steering': {
         'sensitivity': 1.0,
