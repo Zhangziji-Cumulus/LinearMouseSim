@@ -11,19 +11,24 @@
     "wheel_adjust": "control_l"
   },
   "steering": {
-    "sensitivity": 0.1,
+    "sensitivity": 0.5178294573643412,
     "smoothing_factor": 0.99,
-    "deadzone": 1.0,
-    "max_angle": 540.0,
+    "deadzone": 0.0,
+    "max_angle": 260.0,
     "return_speed": 0.0,
-    "curve_type": "exponential",
+    "curve_type": "linear",
     "exponential_power": 1.0,
-    "reverse_direction": false
+    "reverse_direction": false,
+    "assist_threshold": 180,
+    "assist_min_delta": 20,
+    "near_center_threshold": 50,
+    "center_hold_ms": 500,
+    "center_release_threshold": 200
   },
   "three_zone": {
     "deadzone_start": 0,
-    "deadzone_end": 1.0,
-    "linear_start": 1.0,
+    "deadzone_end": 0.0,
+    "linear_start": 0.0,
     "linear_end": 500,
     "saturation_start": 500,
     "saturation_end": 1000

@@ -13,10 +13,7 @@ class OSDManager:
         self._root = None
         
         self.curve_type_map = {
-            'linear': '线性',
             'exponential': '指数',
-            'logarithmic': '对数',
-            's_curve': 'S型'
         }
     
     def _ensure_root(self):

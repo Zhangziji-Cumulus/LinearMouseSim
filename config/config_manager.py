@@ -20,9 +20,14 @@ DEFAULT_CONFIG = {
         'deadzone': 3,
         'max_angle': 90,
         'return_speed': 0.0,
-        'curve_type': 'linear',
+        'curve_type': 'exponential',
         'exponential_power': 1.5,
-        'reverse_direction': False
+        'reverse_direction': False,
+        'assist_threshold': 180,
+        'assist_min_delta': 20,
+        'near_center_threshold': 50,
+        'center_hold_ms': 500,
+        'center_release_threshold': 200
     },
     'three_zone': {
         'deadzone_start': 0,

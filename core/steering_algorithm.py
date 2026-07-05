@@ -22,6 +22,7 @@
 """
 
 import math
+import time
 
 
 class SteeringAlgorithm:
@@ -48,7 +49,7 @@ class SteeringAlgorithm:
             deadzone: 死区大小 (0-20像素)，默认3
             max_angle: 最大舵角 (30-180度)，默认90
             return_speed: 回正速度 (0.0-1.0)，默认0.0（不回正）
-            curve_type: 曲线类型 (linear/exponential/logarithmic/s_curve)，默认linear
+            curve_type: 曲线类型，固定为 exponential
             exponential_power: 指数曲线幂次 (1.0-3.0)，默认1.5
             deadzone_start: 死区起始 (像素)，默认0
             deadzone_end: 死区结束 (像素)，默认3
@@ -73,18 +74,23 @@ class SteeringAlgorithm:
         # 回正惯性参数
         self.return_speed = self._clamp(kwargs.get('return_speed', 0.0), 0.0, 1.0)
         
-        # 曲线类型参数
-        self.curve_type = kwargs.get('curve_type', 'linear')
+        # 曲线类型参数（固定为指数曲线）
+        self.curve_type = 'exponential'
         self.exponential_power = self._clamp(kwargs.get('exponential_power', 1.5), 1.0, 3.0)
         
         # 方向反转参数
         self.reverse_direction = kwargs.get('reverse_direction', False)
 
         # 辅助回中参数
-        # 当用户从大角度向中心回打时，额外加速归中，帮助找到中心位置
-        self.assist_threshold = kwargs.get('assist_threshold', 80.0)    # 累积位移超过此值才启用
-        self.assist_strength = kwargs.get('assist_strength', 2.5)       # 回中辅助倍率
-        self.assist_near_center = kwargs.get('assist_near_center', 15.0)# 进入此范围后停止辅助
+        # 当用户从大角度向中心回打时，按比例快速缩减累积位移，让回中更跟手
+        # 进入近中心区后启动 500ms 中心检测，累计用户位移
+        # 若累计位移超过阈值则释放让用户继续转向，否则保持中心
+        self.assist_threshold = kwargs.get('assist_threshold', 180.0)    # 角度超过此值(度)才启用辅助
+        self.assist_min_delta = kwargs.get('assist_min_delta', 20.0)     # 单帧回打幅度超过此值才触发（避免轻微抖动误触发）
+        self.assist_return_rate = kwargs.get('assist_return_rate', 0.20)    # 每次回打缩减比例 (0~1)
+        self.near_center_threshold = kwargs.get('near_center_threshold', 50.0)  # 进入中心检测的边界
+        self.center_hold_ms = kwargs.get('center_hold_ms', 500)            # 中心检测持续时间(ms)
+        self.center_release_threshold = kwargs.get('center_release_threshold', 200) # 释放阈值
         
         # 三段式灵敏度分区参数
         self.deadzone_start = max(0, kwargs.get('deadzone_start', 0))
@@ -97,11 +103,11 @@ class SteeringAlgorithm:
         # 状态变量
         self.previous_angle = 0.0
         self.accumulated_x = 0.0
-        
-        # 验证曲线类型
-        valid_curves = ['linear', 'exponential', 'logarithmic', 's_curve']
-        if self.curve_type not in valid_curves:
-            self.curve_type = 'linear'
+        # 辅助回中状态机
+        self._assist_active = False        # 状态 B 或 C
+        self._assist_from_direction = 0    # 进入 B 时的 delta_x 方向
+        self._hold_delta_sum = 0           # C 态期间累计位移
+        self._hold_start_time = 0          # C 态开始时间
     
     @property
     def sensitivity(self):
@@ -141,6 +147,10 @@ class SteeringAlgorithm:
         """
         self.previous_angle = 0.0
         self.accumulated_x = 0.0
+        self._assist_active = False
+        self._assist_from_direction = 0
+        self._hold_delta_sum = 0
+        self._hold_start_time = 0
     
     def set_parameter(self, param_name: str, value):
         """
@@ -162,19 +172,22 @@ class SteeringAlgorithm:
             self.max_angle = self._clamp(value, 30, 720)
         elif param_name == 'return_speed':
             self.return_speed = self._clamp(value, 0.0, 1.0)
-        elif param_name == 'curve_type':
-            valid_curves = ['linear', 'exponential', 'logarithmic', 's_curve']
-            self.curve_type = value if value in valid_curves else 'linear'
         elif param_name == 'exponential_power':
             self.exponential_power = self._clamp(value, 1.0, 3.0)
         elif param_name == 'reverse_direction':
             self.reverse_direction = bool(value)
         elif param_name == 'assist_threshold':
             self.assist_threshold = max(0.0, value)
-        elif param_name == 'assist_strength':
-            self.assist_strength = max(1.0, value)
-        elif param_name == 'assist_near_center':
-            self.assist_near_center = max(0.0, value)
+        elif param_name == 'assist_min_delta':
+            self.assist_min_delta = max(0.0, value)
+        elif param_name == 'near_center_threshold':
+            self.near_center_threshold = max(0.0, value)
+        elif param_name == 'center_hold_ms':
+            self.center_hold_ms = max(0, value)
+        elif param_name == 'center_release_threshold':
+            self.center_release_threshold = max(0.0, value)
+        elif param_name == 'assist_return_rate':
+            self.assist_return_rate = max(0.0, min(1.0, value))
         elif param_name == 'deadzone_start':
             self.deadzone_start = max(0, value)
         elif param_name == 'deadzone_end':
@@ -190,7 +203,7 @@ class SteeringAlgorithm:
     
     def _apply_curve(self, normalized_input: float) -> float:
         """
-        应用灵敏度曲线，对归一化输入进行非线性变换
+        应用指数灵敏度曲线
         
         参数：
             normalized_input: 归一化输入值 (-1.0 到 1.0)
@@ -198,41 +211,15 @@ class SteeringAlgorithm:
         返回：
             应用曲线后的归一化输出值 (-1.0 到 1.0)
             
-        四种曲线类型：
-        1. linear: 线性曲线，输出等于输入
-        2. exponential: 指数曲线，y = sign(x) * |x|^n
-        3. logarithmic: 对数曲线，y = sign(x) * (1 - exp(-k|x|)) / (1 - exp(-k))
-        4. s_curve: S型曲线，使用tanh函数实现平滑过渡
+        指数曲线：y = sign(x) * |x|^n
+        特点：小位移时变化平缓（精确控制），大位移时变化急剧（快速响应）
         """
         if normalized_input == 0:
             return 0.0
             
         abs_input = abs(normalized_input)
         sign = 1 if normalized_input >= 0 else -1
-        
-        if self.curve_type == 'linear':
-            # 线性曲线：y = x
-            return normalized_input
-            
-        elif self.curve_type == 'exponential':
-            # 指数曲线：y = sign(x) * |x|^n
-            # 特点：小位移时变化平缓，大位移时变化急剧
-            return sign * math.pow(abs_input, self.exponential_power)
-            
-        elif self.curve_type == 'logarithmic':
-            # 对数曲线：y = sign(x) * (1 - exp(-k|x|)) / (1 - exp(-k))
-            # 特点：小位移时变化灵敏，大位移时趋于饱和
-            k = 5.0  # 曲线陡峭度系数
-            return sign * (1 - math.exp(-k * abs_input)) / (1 - math.exp(-k))
-            
-        elif self.curve_type == 's_curve':
-            # S型曲线：使用tanh函数实现平滑过渡
-            # 特点：两端平缓，中间线性，适合精确控制
-            # tanh(3x) 在x=0时接近0，x=1时接近1，中间近似线性
-            return math.tanh(3 * normalized_input)
-            
-        else:
-            return normalized_input
+        return sign * math.pow(abs_input, self.exponential_power)
     
     def _apply_three_zone(self, delta_x: int) -> float:
         """
@@ -324,53 +311,92 @@ class SteeringAlgorithm:
         # 步骤1：死区过滤
         # 如果|delta_x| < deadzone，不累积增量，保持当前状态
         if abs_delta < self.deadzone:
-            # 步骤3：回正衰减（如果鼠标停止移动）
-            if not is_moving and self.return_speed > 0:
+            # 辅助回中期间，即使小位移也继续按比例缩减
+            if self._assist_active:
+                self.accumulated_x *= (1.0 - self.assist_return_rate)
+                if abs(self.accumulated_x) < self.near_center_threshold:
+                    self.accumulated_x = 0.0
+                    # 进入中心检测态
+                    self._hold_delta_sum = 0.0
+                    self._hold_start_time = time.monotonic()
+            elif not is_moving and self.return_speed > 0:
                 self.accumulated_x *= (1 - self.return_speed)
                 if abs(self.accumulated_x) < 0.01:
                     self.accumulated_x = 0.0
+
+            # 限制 accumulated_x 不超过饱和区上限
+            max_acc = self.saturation_end
+            self.accumulated_x = self._clamp(self.accumulated_x, -max_acc, max_acc)
             
-            # 使用 accumulated_x 计算当前角度
             raw_angle = self._apply_three_zone(self.accumulated_x)
-            
             if self.max_angle > 0:
                 normalized_angle = raw_angle / self.max_angle
                 normalized_angle = self._apply_curve(normalized_angle)
                 raw_angle = normalized_angle * self.max_angle
-            
             current_angle = self.smoothing_factor * raw_angle + \
                             (1 - self.smoothing_factor) * self.previous_angle
             current_angle = self._clamp(current_angle, -self.max_angle, self.max_angle)
-            
             self.previous_angle = current_angle
             return current_angle
-            
-        # 步骤2：增量累积
-        # 将增量位移乘以灵敏度系数后累加到 accumulated_x
-        # 灵敏度系数已包含DPI换算，确保不同DPI鼠标手感一致
-        self.accumulated_x += delta_x * self.sensitivity
 
-        # 辅助回中：当从大角度向中心回打时，额外加速归中
-        # 目的是帮助用户更容易找到中心位置，同时不影响从中心向外打的操控
-        if abs(self.accumulated_x) > self.assist_threshold:
-            # 判断是否正在回中：delta_x 与 accumulated_x 方向相反
-            moving_toward_center = (delta_x < 0 and self.accumulated_x > 0) or (delta_x > 0 and self.accumulated_x < 0)
-            if moving_toward_center:
-                # 额外减少 accumulated_x，加速归中
-                assist_extra = abs(delta_x) * self.sensitivity * (self.assist_strength - 1.0)
-                if self.accumulated_x > 0:
-                    self.accumulated_x -= assist_extra
+        # ===== 辅助回中三状态机 =====
+        # 状态 A（普通态）：正常累积，检测到大角度回打则进入 B
+        # 状态 B（归中态）：比例缩减 accumulated_x，到达近中心则进入 C
+        # 状态 C（检测态）：锁定 0，累计位移 500ms，超阈值则释放
+
+        if self._assist_active:
+            # ── 状态 B 或 C ──
+            if self._hold_start_time > 0:
+                # ── 状态 C：中心检测态 ──
+                self.accumulated_x = 0.0
+                self._hold_delta_sum += abs(delta_x)
+
+                elapsed_ms = (time.monotonic() - self._hold_start_time) * 1000
+                if elapsed_ms >= self.center_hold_ms:
+                    # 500ms 到，判断是否释放
+                    if self._hold_delta_sum > self.center_release_threshold:
+                        # 用户确实想继续转 → 释放，应用累积位移
+                        self.accumulated_x += delta_x * self.sensitivity
+                    # 否则保持 0
+                    self._assist_active = False
+                    self._hold_start_time = 0
+                    self._hold_delta_sum = 0.0
+            else:
+                # ── 状态 B：辅助归中态 ──
+                if abs(self.accumulated_x) > self.near_center_threshold:
+                    # 距离中心还远，继续比例缩减
+                    self.accumulated_x *= (1.0 - self.assist_return_rate)
                 else:
-                    self.accumulated_x += assist_extra
-
-                # 如果辅助后已进入近中心区，直接归零
-                if abs(self.accumulated_x) < self.assist_near_center:
+                    # 进入近中心区 → 进入状态 C
                     self.accumulated_x = 0.0
+                    self._hold_delta_sum = 0.0
+                    self._hold_start_time = time.monotonic()
+        else:
+            # ── 状态 A：普通态 ──
+            # 用角度来判断是否触发辅助，小角度（<阈值）不触发
+            # 同时要求回打幅度足够大，避免轻微抖动误触发
+            rough_angle = self._apply_three_zone(self.accumulated_x)
+            if abs(rough_angle) > self.assist_threshold and abs(delta_x) > self.assist_min_delta:
+                moving_toward_center = (delta_x < 0 and self.accumulated_x > 0) or \
+                                       (delta_x > 0 and self.accumulated_x < 0)
+                if moving_toward_center:
+                    # 触发辅助回中 → 进入状态 B
+                    self._assist_active = True
+                    self._assist_from_direction = 1 if delta_x > 0 else -1
+                    self.accumulated_x *= (1.0 - self.assist_return_rate)
+                else:
+                    self.accumulated_x += delta_x * self.sensitivity
+            else:
+                self.accumulated_x += delta_x * self.sensitivity
         
         # 步骤3：回正衰减（如果鼠标停止移动）
-        # 即使有增量输入，停止移动时也应用衰减防止角度过大
         if not is_moving and self.return_speed > 0:
             self.accumulated_x *= (1 - self.return_speed)
+        
+        # 限制 accumulated_x 不超过饱和区上限
+        # 避免超出后角度不再增大，但回打时仍需消化多余累积位移导致手感卡顿
+        max_acc = self.saturation_end
+        self.accumulated_x = self._clamp(self.accumulated_x, -max_acc, max_acc)
         
         # 步骤4：三段式灵敏度分区计算原始角度
         # 使用累积位移 accumulated_x 而非原始 delta_x

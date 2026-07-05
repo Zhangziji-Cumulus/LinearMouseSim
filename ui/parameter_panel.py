@@ -132,10 +132,7 @@ class ParameterPanel(tk.Frame):
     """参数调节面板类"""
     
     CURVE_TYPES = [
-        ('线性', 'linear'),
         ('指数', 'exponential'),
-        ('对数', 'logarithmic'),
-        ('S型', 's_curve')
     ]
     
     def __init__(self, parent, app=None, **kwargs):
@@ -251,7 +248,28 @@ class ParameterPanel(tk.Frame):
             callback=self._on_parameter_change
         )
         self._sliders['return_speed'].pack(fill=tk.X, padx=15)
-        
+
+        # 辅助回中参数
+        assist_label = ttk.Label(
+            inner, text='辅助回中',
+            foreground=Theme.ON_SURFACE_VARIANT,
+            background=Theme.SURFACE_CONTAINER,
+            font=(Theme.FONT_FAMILY, 10, 'bold')
+        )
+        assist_label.pack(fill=tk.X, padx=15, pady=(10, 3))
+
+        self._sliders['center_hold_ms'] = ParameterSlider(
+            inner, '中心保持时长', 100, 1500, 500, resolution=50, unit='ms',
+            callback=self._on_parameter_change
+        )
+        self._sliders['center_hold_ms'].pack(fill=tk.X, padx=15)
+
+        self._sliders['center_release_threshold'] = ParameterSlider(
+            inner, '释放位移阈值', 50, 1000, 200, resolution=10, unit='',
+            callback=self._on_parameter_change
+        )
+        self._sliders['center_release_threshold'].pack(fill=tk.X, padx=15)
+
         self._reverse_var = tk.BooleanVar(value=False)
         self._reverse_checkbox = ttk.Checkbutton(
             inner, text='反转方向盘方向',
@@ -380,7 +398,9 @@ class ParameterPanel(tk.Frame):
             'dpi': self._sliders['dpi'].get_value(),
             'return_speed': self._sliders['return_speed'].get_value() / 100.0,
             'curve_type': self._curve_var.get(),
-            'reverse_direction': self._reverse_var.get()
+            'reverse_direction': self._reverse_var.get(),
+            'center_hold_ms': int(self._sliders['center_hold_ms'].get_value()),
+            'center_release_threshold': int(self._sliders['center_release_threshold'].get_value())
         }
     
     def set_parameters(self, params):
