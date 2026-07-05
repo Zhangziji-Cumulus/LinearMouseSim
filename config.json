@@ -1,6 +1,6 @@
 {
   "hotkeys": {
-    "toggle": "}" ,
+    "toggle": "}",
     "increase_sensitivity": "+",
     "decrease_sensitivity": "-",
     "reset_steering": "0",
@@ -8,34 +8,34 @@
     "sensitivity_preset_2": "f6",
     "sensitivity_preset_3": "f7",
     "cycle_curve": "f8",
-    "wheel_adjust": "ctrl"
+    "wheel_adjust": "control_l"
   },
   "steering": {
-    "sensitivity": 2.000000000000001,
-    "smoothing_factor": 0.5030487804878049,
-    "deadzone": 4.0,
-    "max_angle": 90.0,
-    "return_speed": 0.03,
-    "curve_type": "logarithmic",
-    "exponential_power": 1.0
+    "sensitivity": 1.0,
+    "smoothing_factor": 0.3,
+    "deadzone": 3.0,
+    "max_angle": 180.0,
+    "return_speed": 0.0,
+    "curve_type": "exponential",
+    "exponential_power": 1.5
   },
   "three_zone": {
     "deadzone_start": 0,
-    "deadzone_end": 4.0,
-    "linear_start": 4.0,
+    "deadzone_end": 3.0,
+    "linear_start": 3.0,
     "linear_end": 500,
     "saturation_start": 500,
     "saturation_end": 1000
   },
   "mouse": {
-    "dpi": 800,
+    "dpi": 800.0,
     "enable_y_filter": true
   },
   "app": {
     "auto_start": false,
     "start_minimized": false,
     "tray_icon": true,
-    "osd_enabled": true,
+    "osd_enabled": false,
     "osd_duration": 2000
   }
 }

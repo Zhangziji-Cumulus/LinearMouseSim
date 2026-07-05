@@ -70,19 +70,58 @@ class ParameterPanel(tk.Frame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         
-        # 配置背景
         self.configure(bg='#1a1a2e')
         
-        # 标题
+        self._canvas = tk.Canvas(self, bg='#1a1a2e', highlightthickness=0)
+        self._scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self._canvas.yview)
+        self._inner_frame = ttk.Frame(self._canvas)
+        
+        self._inner_frame_id = self._canvas.create_window((0, 0), window=self._inner_frame, anchor='nw')
+        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+        
+        self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self._canvas.bind('<MouseWheel>', self._on_mouse_wheel)
+        self._canvas.bind('<Configure>', self._on_canvas_configure)
+        self._inner_frame.bind('<Configure>', self._on_inner_frame_configure)
+        
+        self._sliders = {}
+        self._on_preset_callback = None
+        self._hotkey_display = {}
+        self._hotkey_buttons = {}
+        self._hotkey_manager = None
+        self._recording_action = None
+        
+        self._build_content()
+    
+    def _on_inner_frame_configure(self, event):
+        self._canvas.configure(scrollregion=self._canvas.bbox('all'))
+    
+    def _on_canvas_configure(self, event):
+        canvas_width = event.width
+        self._canvas.itemconfig(self._inner_frame_id, width=canvas_width)
+    
+    def _on_mouse_wheel(self, event):
+        self._canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        return 'break'
+    
+    def _bind_mousewheel_recursive(self, widget):
+        widget.bind('<MouseWheel>', self._on_mouse_wheel)
+        for child in widget.winfo_children():
+            self._bind_mousewheel_recursive(child)
+    
+    def _build_content(self):
+        inner = self._inner_frame
+        
         title_label = ttk.Label(
-            self, text='参数设置', 
+            inner, text='参数设置', 
             foreground='#ffffff', background='#1a1a2e',
             font=('Arial', 14, 'bold')
         )
         title_label.pack(fill=tk.X, pady=(10, 10), padx=10)
         
-        # 预设选择
-        preset_frame = ttk.Frame(self)
+        preset_frame = ttk.Frame(inner)
         preset_frame.pack(fill=tk.X, padx=10, pady=(0, 15))
         
         preset_label = ttk.Label(
@@ -100,56 +139,43 @@ class ParameterPanel(tk.Frame):
         self._preset_combo.pack(fill=tk.X)
         self._preset_combo.bind('<<ComboboxSelected>>', self._on_preset_selected)
         
-        # 参数滑块列表
-        self._sliders = {}
-        
-        # 预设应用回调
-        self._on_preset_callback = None
-        
-        # 灵敏度滑块 (0.1 - 5.0)
         self._sliders['sensitivity'] = ParameterSlider(
-            self, '灵敏度', 0.1, 5.0, 1.0, resolution=0.1, unit='x',
+            inner, '灵敏度', 0.1, 5.0, 1.0, resolution=0.1, unit='x',
             callback=self._on_parameter_change
         )
         self._sliders['sensitivity'].pack(fill=tk.X, padx=10)
         
-        # 平滑系数滑块 (0.0 - 0.99)
         self._sliders['smoothing_factor'] = ParameterSlider(
-            self, '平滑系数', 0.0, 0.99, 0.3, resolution=0.01, unit='',
+            inner, '平滑系数', 0.0, 0.99, 0.3, resolution=0.01, unit='',
             callback=self._on_parameter_change
         )
         self._sliders['smoothing_factor'].pack(fill=tk.X, padx=10)
         
-        # 死区滑块 (0 - 20)
         self._sliders['deadzone'] = ParameterSlider(
-            self, '死区', 0, 20, 3, resolution=1, unit='px',
+            inner, '死区', 0, 20, 3, resolution=1, unit='px',
             callback=self._on_parameter_change
         )
         self._sliders['deadzone'].pack(fill=tk.X, padx=10)
         
-        # 最大舵角滑块 (30 - 180)
         self._sliders['max_angle'] = ParameterSlider(
-            self, '最大舵角', 30, 180, 90, resolution=1, unit='°',
+            inner, '最大舵角', 30, 180, 90, resolution=1, unit='°',
             callback=self._on_parameter_change
         )
         self._sliders['max_angle'].pack(fill=tk.X, padx=10)
         
-        # DPI滑块 (100 - 25600)，用于灵敏度联动换算
         self._sliders['dpi'] = ParameterSlider(
-            self, '鼠标DPI', 100, 25600, 800, resolution=100, unit='',
+            inner, '鼠标DPI', 100, 25600, 800, resolution=100, unit='',
             callback=self._on_parameter_change
         )
         self._sliders['dpi'].pack(fill=tk.X, padx=10)
         
-        # 回正速度滑块 (0 - 100)
         self._sliders['return_speed'] = ParameterSlider(
-            self, '回正速度', 0, 100, 0, resolution=1, unit='%',
+            inner, '回正速度', 0, 100, 0, resolution=1, unit='%',
             callback=self._on_parameter_change
         )
         self._sliders['return_speed'].pack(fill=tk.X, padx=10)
         
-        # 灵敏度曲线选择
-        curve_frame = ttk.Frame(self)
+        curve_frame = ttk.Frame(inner)
         curve_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
         
         curve_label = ttk.Label(
@@ -169,8 +195,7 @@ class ParameterPanel(tk.Frame):
             )
             rb.pack(side=tk.LEFT, padx=(0, 10))
         
-        # 热键配置区域
-        self._hotkey_frame = ttk.Frame(self)
+        self._hotkey_frame = ttk.Frame(inner)
         self._hotkey_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
         
         hotkey_label = ttk.Label(
@@ -190,11 +215,6 @@ class ParameterPanel(tk.Frame):
             'cycle_curve': '切换曲线',
             'wheel_adjust': '滚轮调节键'
         }
-        
-        self._hotkey_display = {}
-        self._hotkey_buttons = {}
-        self._hotkey_manager = None
-        self._recording_action = None
         
         for action, label_text in self._hotkey_actions.items():
             hk_frame = ttk.Frame(self._hotkey_frame)
@@ -222,7 +242,6 @@ class ParameterPanel(tk.Frame):
             self._hotkey_display[action] = display_var
             self._hotkey_buttons[action] = change_btn
         
-        # 回调函数
         self._on_change_callback = None
     
     def _on_preset_selected(self, event):

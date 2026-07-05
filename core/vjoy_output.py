@@ -1,5 +1,12 @@
-import pyvjoy
 import time
+import ctypes
+
+try:
+    import pyvjoy
+    PYVJOY_AVAILABLE = True
+except ImportError:
+    pyvjoy = None
+    PYVJOY_AVAILABLE = False
 
 class VJoyOutput:
     def __init__(self, device_id=1):
@@ -9,13 +16,31 @@ class VJoyOutput:
         self.max_value = 32767
         self.center_value = (self.max_value - self.min_value) // 2
     
-    def initialize(self):
+    def _force_release_device(self):
         try:
-            self.joy = pyvjoy.VJoyDevice(self.device_id)
+            import pyvjoy._sdk as sdk
+            status = sdk.GetVJDStatus(self.device_id)
+            if status != 0:
+                sdk.RelinquishVJD(self.device_id)
+                time.sleep(0.1)
             return True
-        except Exception as e:
-            print(f"vJoy初始化失败: {e}")
+        except Exception:
             return False
+    
+    def initialize(self):
+        self._force_release_device()
+        
+        for attempt in range(3):
+            try:
+                self.joy = pyvjoy.VJoyDevice(self.device_id)
+                return True
+            except Exception as e:
+                print(f"vJoy初始化尝试 {attempt+1}/3 失败: {e}")
+                self._force_release_device()
+                time.sleep(0.2)
+        
+        print("vJoy初始化失败，请确保vJoy已正确安装")
+        return False
     
     def is_initialized(self):
         return self.joy is not None

@@ -188,15 +188,13 @@ class LinearMouseSim:
                 self.is_moving = self.state_machine.is_mouse_moved()
                 self.state_machine.reset_mouse_moved()
                 
-                effective_x = self.state_machine.center_x + self.state_machine.mouse_delta_x
+                delta_x = self.state_machine.get_mouse_delta_x()
                 
                 angle = self.steering_algorithm.update(
-                    mouse_x=effective_x,
-                    base_x=self.state_machine.center_x,
+                    delta_x=delta_x,
                     is_moving=self.is_moving
                 )
                 
-                self.state_machine.mouse_delta_x = 0
                 self.state_machine.current_angle = angle
                 self.vjoy.set_steering_angle(angle, self.config.get('steering.max_angle', 90))
                 
@@ -210,13 +208,10 @@ class LinearMouseSim:
         if not is_admin():
             show_message_box('提示', '建议以管理员身份运行以获得更好的兼容性', 'warning')
         
-        if not check_vjoy_installed():
-            show_message_box('警告', '未检测到vJoy，请先安装vJoy驱动', 'error')
-            return
+        vjoy_available = check_vjoy_installed() and self.vjoy.initialize()
         
-        if not self.vjoy.initialize():
-            show_message_box('错误', 'vJoy初始化失败，请确保vJoy已正确安装和配置', 'error')
-            return
+        if not vjoy_available:
+            print("vJoy不可用，进入模拟模式（仅测试UI和算法）")
         
         self.main_window = MainWindow(self)
         self.main_window.update_status(self.state_machine.get_state())

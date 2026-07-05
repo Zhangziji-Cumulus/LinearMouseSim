@@ -1,17 +1,24 @@
 """
 转向算法模块
-实现鼠标位置到方向盘角度的映射，包含多种灵敏度曲线和滤波算法
+实现鼠标增量位移到方向盘角度的映射，包含多种灵敏度曲线和滤波算法
 
 核心功能：
-1. 绝对位置模式：方向盘角度 = (当前鼠标X - 基准点X) × 灵敏度系数
+1. 增量累积模式：accumulated_x += delta_x × 灵敏度系数
 2. 线性插值平滑：current_angle = alpha * raw_angle + (1-alpha) * previous_angle
-3. 死区过滤：如果delta_x < deadzone，保持当前角度不变
+3. 死区过滤：如果delta_x < deadzone，不累积增量
 4. 最大舵角限制：clamp(angle, -max_angle, +max_angle)
-5. 可选回正惯性：当鼠标停止移动时，angle *= (1 - return_speed)
+5. 回正衰减：当鼠标停止移动时，accumulated_x *= (1 - return_speed)
 6. 四种灵敏度曲线：线性、指数、对数、S型曲线
 7. 三段式灵敏度分区：死区、线性区、饱和区
 
 输出：处理后的方向盘角度（浮点数）
+
+增量累积模型原理：
+- 当光标锁定到中心后，无法使用绝对位置计算角度
+- 每帧获取鼠标增量位移 delta_x，累加到 accumulated_x
+- accumulated_x 作为虚拟位移，映射到方向盘角度
+- 松手后通过衰减系数实现自动回正
+- 本质是速度积分 + 阻尼衰减模型
 """
 
 import math
@@ -80,7 +87,7 @@ class SteeringAlgorithm:
         
         # 状态变量
         self.previous_angle = 0.0
-        self.base_x = None
+        self.accumulated_x = 0.0
         
         # 验证曲线类型
         valid_curves = ['linear', 'exponential', 'logarithmic', 's_curve']
@@ -119,20 +126,12 @@ class SteeringAlgorithm:
         """
         return max(min_val, min(max_val, value))
     
-    def set_base_x(self, base_x: int):
-        """
-        设置基准鼠标X坐标
-        
-        参数：
-            base_x: 基准X坐标
-        """
-        self.base_x = base_x
-    
     def reset(self):
         """
         重置状态，角度归零
         """
         self.previous_angle = 0.0
+        self.accumulated_x = 0.0
     
     def set_parameter(self, param_name: str, value):
         """
@@ -273,84 +272,85 @@ class SteeringAlgorithm:
             # 超出饱和区：直接输出最大角度
             return sign * self.max_angle
     
-    def update(self, mouse_x: int, base_x: int = None, is_moving: bool = True) -> float:
+    def update(self, delta_x: int, is_moving: bool = True) -> float:
         """
-        主更新方法，计算方向盘角度
+        主更新方法，计算方向盘角度（增量累积模式）
         
         参数：
-            mouse_x: 当前鼠标X坐标
-            base_x: 基准鼠标X坐标（可选，若为None则使用内部存储的base_x）
-            is_moving: 鼠标是否正在移动（用于回正惯性判断）
+            delta_x: 鼠标增量位移（像素），由外部传入累积的帧间位移
+            is_moving: 鼠标是否正在移动（用于回正衰减判断）
             
         返回：
             处理后的方向盘角度（浮点数，范围：-max_angle 到 +max_angle）
             
         处理流程：
-        1. 计算鼠标位移（绝对位置模式）
-        2. 死区过滤（如果delta_x < deadzone，保持当前角度不变）
-        3. 三段式灵敏度分区计算原始角度
-        4. 归一化原始角度并应用灵敏度曲线
-        5. 线性插值平滑
-        6. 最大舵角限制
-        7. 回正惯性（如果鼠标停止移动）
-        """
-        # 使用传入的base_x或内部存储的base_x
-        current_base_x = base_x if base_x is not None else self.base_x
+        1. 死区过滤：如果|delta_x| < deadzone，不累积增量
+        2. 增量累积：accumulated_x += delta_x × 灵敏度系数
+        3. 回正衰减：当鼠标停止移动时，accumulated_x *= (1 - return_speed)
+        4. 三段式灵敏度分区计算原始角度（基于accumulated_x）
+        5. 归一化并应用灵敏度曲线
+        6. 线性插值平滑
+        7. 最大舵角限制
         
-        if current_base_x is None:
-            # 未设置基准点，返回0
-            return 0.0
-            
-        # 步骤1：计算鼠标位移（绝对位置模式）
-        # 方向盘角度 = (当前鼠标X - 基准点X) × 灵敏度系数
-        delta_x = mouse_x - current_base_x
+        增量累积模型原理：
+        - 光标锁定到中心后，每帧只能获取微小的增量位移
+        - 将这些增量累积起来形成虚拟位移 accumulated_x
+        - accumulated_x 映射到方向盘角度
+        - 松手后通过衰减系数实现自动回正
+        """
         abs_delta = abs(delta_x)
         
-        # 步骤2：死区过滤
-        # 如果delta_x < deadzone，保持当前角度不变
+        # 步骤1：死区过滤
+        # 如果|delta_x| < deadzone，不累积增量，保持当前状态
         if abs_delta < self.deadzone:
-            # 应用回正惯性（如果鼠标停止移动）
+            # 步骤3：回正衰减（如果鼠标停止移动）
             if not is_moving and self.return_speed > 0:
-                self.previous_angle *= (1 - self.return_speed)
-                # 防止角度过小导致的抖动
-                if abs(self.previous_angle) < 0.01:
-                    self.previous_angle = 0.0
-            return self.previous_angle
+                self.accumulated_x *= (1 - self.return_speed)
+                if abs(self.accumulated_x) < 0.01:
+                    self.accumulated_x = 0.0
             
-        # 步骤3：三段式灵敏度分区计算原始角度
-        raw_angle = self._apply_three_zone(delta_x)
+            # 使用 accumulated_x 计算当前角度
+            raw_angle = self._apply_three_zone(self.accumulated_x)
+            
+            if self.max_angle > 0:
+                normalized_angle = raw_angle / self.max_angle
+                normalized_angle = self._apply_curve(normalized_angle)
+                raw_angle = normalized_angle * self.max_angle
+            
+            current_angle = self.smoothing_factor * raw_angle + \
+                            (1 - self.smoothing_factor) * self.previous_angle
+            current_angle = self._clamp(current_angle, -self.max_angle, self.max_angle)
+            
+            self.previous_angle = current_angle
+            return current_angle
+            
+        # 步骤2：增量累积
+        # 将增量位移乘以灵敏度系数后累加到 accumulated_x
+        # 灵敏度系数已包含DPI换算，确保不同DPI鼠标手感一致
+        self.accumulated_x += delta_x * self.sensitivity
         
-        # 步骤4：归一化原始角度并应用灵敏度曲线
-        # 将原始角度归一化到 [-1, 1] 范围
+        # 步骤3：回正衰减（如果鼠标停止移动）
+        # 即使有增量输入，停止移动时也应用衰减防止角度过大
+        if not is_moving and self.return_speed > 0:
+            self.accumulated_x *= (1 - self.return_speed)
+        
+        # 步骤4：三段式灵敏度分区计算原始角度
+        # 使用累积位移 accumulated_x 而非原始 delta_x
+        raw_angle = self._apply_three_zone(self.accumulated_x)
+        
+        # 步骤5：归一化并应用灵敏度曲线
         if self.max_angle > 0:
             normalized_angle = raw_angle / self.max_angle
-            # 应用灵敏度曲线
             normalized_angle = self._apply_curve(normalized_angle)
-            # 映射回角度范围
             raw_angle = normalized_angle * self.max_angle
         
-        # 步骤4.5：应用经过DPI换算的有效灵敏度系数
-        # 有效灵敏度 = 基础灵敏度 / (DPI / 800)
-        # 确保不同DPI鼠标在相同物理移动距离下产生相同的转向角度
-        raw_angle *= self.sensitivity
-            
-        # 步骤5：线性插值平滑
+        # 步骤6：线性插值平滑
         # current_angle = alpha * raw_angle + (1-alpha) * previous_angle
-        # alpha越小，平滑效果越强，但延迟越大
         current_angle = self.smoothing_factor * raw_angle + \
                         (1 - self.smoothing_factor) * self.previous_angle
         
-        # 步骤6：最大舵角限制
-        # clamp(angle, -max_angle, +max_angle)
+        # 步骤7：最大舵角限制
         current_angle = self._clamp(current_angle, -self.max_angle, self.max_angle)
-        
-        # 步骤7：回正惯性（如果鼠标停止移动）
-        # 当鼠标停止移动时，angle *= (1 - return_speed)
-        if not is_moving and self.return_speed > 0:
-            current_angle *= (1 - self.return_speed)
-            # 防止角度过小导致的抖动
-            if abs(current_angle) < 0.01:
-                current_angle = 0.0
         
         # 更新状态
         self.previous_angle = current_angle
@@ -358,9 +358,9 @@ class SteeringAlgorithm:
         return current_angle
 
 
-# ========== 测试代码 ==========
+# ========== 测试代码（增量累积模式）==========
 if __name__ == '__main__':
-    print("=== 转向算法测试 ===")
+    print("=== 转向算法测试（增量累积模式）===")
     
     # 创建转向算法实例
     sa = SteeringAlgorithm(
@@ -373,70 +373,78 @@ if __name__ == '__main__':
         exponential_power=1.5
     )
     
-    # 设置基准点
-    sa.set_base_x(500)
-    
-    # 测试场景1：鼠标在基准点附近移动（死区测试）
-    print("\n--- 测试场景1：死区过滤 ---")
-    test_points = [500, 501, 502, 503, 504, 499, 498, 497, 496]
-    for x in test_points:
-        angle = sa.update(x)
-        print(f"鼠标X={x}, delta_x={x-500}, 角度={angle:.2f}")
-    
-    # 测试场景2：鼠标快速移动（最大角度测试）
-    print("\n--- 测试场景2：最大角度限制 ---")
+    # 测试场景1：增量位移累积测试
+    print("\n--- 测试场景1：增量位移累积 ---")
     sa.reset()
-    for i in range(0, 1500, 100):
-        angle = sa.update(500 + i)
-        print(f"鼠标X={500+i}, delta_x={i}, 角度={angle:.2f}")
+    delta_steps = [10, 10, 10, 10, 10, -5, -5]
+    for delta in delta_steps:
+        angle = sa.update(delta)
+        print(f"增量位移={delta}, accumulated_x={sa.accumulated_x:.2f}, 角度={angle:.2f}")
     
-    # 测试场景3：回正惯性测试
-    print("\n--- 测试场景3：回正惯性 ---")
+    # 测试场景2：死区过滤测试
+    print("\n--- 测试场景2：死区过滤 ---")
     sa.reset()
-    # 快速移动到600
+    small_deltas = [1, 2, 3, 4, -1, -2, -3, -4]
+    for delta in small_deltas:
+        angle = sa.update(delta)
+        print(f"增量位移={delta}, accumulated_x={sa.accumulated_x:.2f}, 角度={angle:.2f}")
+    
+    # 测试场景3：最大角度限制
+    print("\n--- 测试场景3：最大角度限制 ---")
+    sa.reset()
+    for i in range(0, 50):
+        angle = sa.update(50)
+        if abs(angle) >= sa.max_angle * 0.99:
+            break
+    print(f"累积位移={sa.accumulated_x:.2f}, 最终角度={angle:.2f}, 最大角度={sa.max_angle}")
+    
+    # 测试场景4：回正衰减测试
+    print("\n--- 测试场景4：回正衰减 ---")
+    sa.reset()
+    # 累积到一定角度
     for _ in range(10):
-        sa.update(600, is_moving=True)
-    angle = sa.update(600, is_moving=True)
-    print(f"移动到600后的角度: {angle:.2f}")
+        sa.update(20, is_moving=True)
+    angle = sa.update(0, is_moving=True)
+    print(f"累积后的角度: {angle:.2f}, accumulated_x={sa.accumulated_x:.2f}")
     
     # 停止移动，测试回正
-    for i in range(10):
-        angle = sa.update(600, is_moving=False)
-        print(f"回正第{i+1}帧: 角度={angle:.2f}")
+    for i in range(15):
+        angle = sa.update(0, is_moving=False)
+        print(f"回正第{i+1}帧: 角度={angle:.2f}, accumulated_x={sa.accumulated_x:.2f}")
     
-    # 测试场景4：四种曲线类型对比
-    print("\n--- 测试场景4：曲线类型对比 ---")
+    # 测试场景5：四种曲线类型对比
+    print("\n--- 测试场景5：曲线类型对比 ---")
     curves = ['linear', 'exponential', 'logarithmic', 's_curve']
-    test_delta = 200
     
     for curve in curves:
         sa_test = SteeringAlgorithm(
             sensitivity=0.5,
             max_angle=90,
             curve_type=curve,
-            smoothing_factor=1.0  # 禁用平滑以便看清曲线效果
+            smoothing_factor=1.0
         )
-        sa_test.set_base_x(500)
-        angle = sa_test.update(500 + test_delta)
-        print(f"曲线类型={curve}, delta_x={test_delta}, 角度={angle:.2f}")
+        # 累积相同增量
+        for _ in range(20):
+            sa_test.update(10)
+        angle = sa_test.update(0)
+        print(f"曲线类型={curve}, accumulated_x={sa_test.accumulated_x:.2f}, 角度={angle:.2f}")
     
-    # 测试场景5：平滑效果测试
-    print("\n--- 测试场景5：平滑效果测试 ---")
+    # 测试场景6：平滑效果测试
+    print("\n--- 测试场景6：平滑效果测试 ---")
     sa_smooth = SteeringAlgorithm(
         sensitivity=0.5,
         max_angle=90,
         curve_type='linear',
-        smoothing_factor=0.1  # 强平滑
+        smoothing_factor=0.1
     )
-    sa_smooth.set_base_x(500)
     
     # 模拟抖动输入
-    for i, x in enumerate([550, 548, 552, 549, 551, 550]):
-        angle = sa_smooth.update(x)
-        print(f"第{i+1}帧: 鼠标X={x}, delta_x={x-500}, 角度={angle:.2f}")
+    for i, delta in enumerate([10, -2, 2, -1, 1, 0]):
+        angle = sa_smooth.update(delta)
+        print(f"第{i+1}帧: 增量={delta}, accumulated_x={sa_smooth.accumulated_x:.2f}, 角度={angle:.2f}")
     
-    # 测试场景6：指数曲线幂次测试
-    print("\n--- 测试场景6：指数曲线幂次测试 ---")
+    # 测试场景7：指数曲线幂次测试
+    print("\n--- 测试场景7：指数曲线幂次测试 ---")
     for power in [1.0, 1.5, 2.0, 2.5, 3.0]:
         sa_exp = SteeringAlgorithm(
             sensitivity=0.5,
@@ -445,12 +453,13 @@ if __name__ == '__main__':
             exponential_power=power,
             smoothing_factor=1.0
         )
-        sa_exp.set_base_x(500)
-        angle = sa_exp.update(500 + 200)
-        print(f"指数幂次={power}, delta_x=200, 角度={angle:.2f}")
+        for _ in range(20):
+            sa_exp.update(10)
+        angle = sa_exp.update(0)
+        print(f"指数幂次={power}, accumulated_x={sa_exp.accumulated_x:.2f}, 角度={angle:.2f}")
     
-    # 测试场景7：DPI联动换算测试
-    print("\n--- 测试场景7：DPI联动换算测试 ---")
+    # 测试场景8：DPI联动换算测试
+    print("\n--- 测试场景8：DPI联动换算测试 ---")
     print("基础灵敏度=1.0，基准DPI=800")
     print("换算公式：effective_sensitivity = base_sensitivity / (dpi / 800)")
     print("-" * 60)
@@ -461,40 +470,40 @@ if __name__ == '__main__':
             sensitivity=1.0,
             dpi=dpi,
             max_angle=90,
-            smoothing_factor=1.0  # 禁用平滑以便看清灵敏度效果
+            smoothing_factor=1.0
         )
-        sa_dpi.set_base_x(500)
-        # 计算理论有效灵敏度
         expected_sensitivity = 1.0 / (dpi / 800.0)
         print(f"DPI={dpi}, 基础灵敏度={sa_dpi.base_sensitivity:.2f}, 有效灵敏度={sa_dpi.sensitivity:.4f}, 理论值={expected_sensitivity:.4f}")
     
-    # 测试场景8：不同DPI下手感一致性测试
-    print("\n--- 测试场景8：不同DPI下手感一致性测试 ---")
-    print("模拟相同物理移动距离（假设800DPI下移动100像素）")
+    # 测试场景9：不同DPI下手感一致性测试
+    print("\n--- 测试场景9：不同DPI下手感一致性测试 ---")
+    print("模拟相同物理移动距离（假设800DPI下移动100像素，灵敏度=1.0）")
     print("-" * 60)
     
-    # 基准情况：800DPI，移动100像素
+    # 基准情况：800DPI，每次移动10像素，共10次
     sa_800 = SteeringAlgorithm(sensitivity=1.0, dpi=800, max_angle=90, smoothing_factor=1.0)
-    sa_800.set_base_x(500)
-    angle_800 = sa_800.update(600)  # delta_x = 100
-    print(f"DPI=800, 移动100像素, 角度={angle_800:.2f}")
+    for _ in range(10):
+        sa_800.update(10)
+    angle_800 = sa_800.update(0)
+    print(f"DPI=800, 每次移动10像素x10次, 角度={angle_800:.2f}, accumulated_x={sa_800.accumulated_x:.2f}")
     
-    # 高DPI情况：1600DPI，移动200像素（相同物理距离）
+    # 高DPI情况：1600DPI，每次移动20像素（相同物理距离）
     sa_1600 = SteeringAlgorithm(sensitivity=1.0, dpi=1600, max_angle=90, smoothing_factor=1.0)
-    sa_1600.set_base_x(500)
-    angle_1600 = sa_1600.update(700)  # delta_x = 200（相同物理距离）
-    print(f"DPI=1600, 移动200像素（相同物理距离）, 角度={angle_1600:.2f}")
+    for _ in range(10):
+        sa_1600.update(20)
+    angle_1600 = sa_1600.update(0)
+    print(f"DPI=1600, 每次移动20像素x10次（相同物理距离）, 角度={angle_1600:.2f}, accumulated_x={sa_1600.accumulated_x:.2f}")
     
-    # 低DPI情况：400DPI，移动50像素（相同物理距离）
+    # 低DPI情况：400DPI，每次移动5像素（相同物理距离）
     sa_400 = SteeringAlgorithm(sensitivity=1.0, dpi=400, max_angle=90, smoothing_factor=1.0)
-    sa_400.set_base_x(500)
-    angle_400 = sa_400.update(550)  # delta_x = 50（相同物理距离）
-    print(f"DPI=400, 移动50像素（相同物理距离）, 角度={angle_400:.2f}")
+    for _ in range(10):
+        sa_400.update(5)
+    angle_400 = sa_400.update(0)
+    print(f"DPI=400, 每次移动5像素x10次（相同物理距离）, 角度={angle_400:.2f}, accumulated_x={sa_400.accumulated_x:.2f}")
     
-    # 测试场景9：动态修改DPI参数测试
-    print("\n--- 测试场景9：动态修改DPI参数测试 ---")
+    # 测试场景10：动态修改参数测试
+    print("\n--- 测试场景10：动态修改参数测试 ---")
     sa_dynamic = SteeringAlgorithm(sensitivity=1.0, dpi=800, max_angle=90, smoothing_factor=1.0)
-    sa_dynamic.set_base_x(500)
     
     print(f"初始DPI={sa_dynamic.dpi}, 有效灵敏度={sa_dynamic.sensitivity:.4f}")
     

@@ -102,16 +102,16 @@ class SteeringStateMachine:
         else:
             self.turn_off()
     
-    def update(self, current_x):
-        if self.state != 'ON':
-            return 0.0
+    def get_mouse_delta_x(self):
+        """
+        获取累积的鼠标增量位移并清零
         
-        delta_x = current_x - self.base_x
-        self.current_angle = delta_x
-        
-        self.vjoy_output.set_steering_angle(self.current_angle)
-        
-        return self.current_angle
+        返回：
+            累积的鼠标X轴增量位移
+        """
+        delta = self.mouse_delta_x
+        self.mouse_delta_x = 0
+        return delta
     
     def get_state(self):
         with self.state_lock:

@@ -76,8 +76,11 @@ class HotkeyManager:
         # 加载滚轮调节键配置
         self.wheel_adjust_key = hotkey_config.get('wheel_adjust', 'ctrl')
         
-        # 注册滚轮事件监听
-        keyboard.on_scroll(self._on_scroll)
+        # 注册滚轮事件监听（兼容不同版本的 keyboard 库）
+        try:
+            keyboard.on_scroll(self._on_scroll)
+        except AttributeError:
+            print("当前版本的 keyboard 库不支持 on_scroll，滚轮调节功能暂不可用")
     
     def _on_scroll(self, event):
         """处理滚轮滚动事件"""
