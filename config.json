@@ -11,7 +11,7 @@
     "wheel_adjust": "control_l"
   },
   "steering": {
-    "sensitivity": 1.0,
+    "sensitivity": 0.1,
     "smoothing_factor": 0.3,
     "deadzone": 3.0,
     "max_angle": 180.0,

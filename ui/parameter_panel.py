@@ -243,6 +243,12 @@ class ParameterPanel(tk.Frame):
             self._hotkey_buttons[action] = change_btn
         
         self._on_change_callback = None
+        
+        self._bind_mousewheel_recursive(self._inner_frame)
+        self._canvas.after(100, self._update_scrollregion)
+    
+    def _update_scrollregion(self):
+        self._canvas.configure(scrollregion=self._canvas.bbox('all'))
     
     def _on_preset_selected(self, event):
         """预设选择回调"""

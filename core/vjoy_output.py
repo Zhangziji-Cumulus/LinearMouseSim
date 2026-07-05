@@ -17,6 +17,8 @@ class VJoyOutput:
         self.center_value = (self.max_value - self.min_value) // 2
     
     def _force_release_device(self):
+        if not PYVJOY_AVAILABLE:
+            return False
         try:
             import pyvjoy._sdk as sdk
             status = sdk.GetVJDStatus(self.device_id)
@@ -28,6 +30,10 @@ class VJoyOutput:
             return False
     
     def initialize(self):
+        if not PYVJOY_AVAILABLE:
+            print("pyvjoy库未安装，vJoy功能不可用")
+            return False
+        
         self._force_release_device()
         
         for attempt in range(3):

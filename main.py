@@ -13,7 +13,7 @@ from core import (
 from ui import MainWindow, SteeringWheelCanvas, StatusBar, ParameterPanel, OSDManager
 from config import ConfigManager, PresetManager
 from hotkey import HotkeyManager
-from utils import is_admin, check_vjoy_installed, show_message_box
+from utils import check_vjoy_installed
 
 class LinearMouseSim:
     def __init__(self):
@@ -205,9 +205,6 @@ class LinearMouseSim:
             time.sleep(0.005)
     
     def run(self):
-        if not is_admin():
-            show_message_box('提示', '建议以管理员身份运行以获得更好的兼容性', 'warning')
-        
         vjoy_available = check_vjoy_installed() and self.vjoy.initialize()
         
         if not vjoy_available:
