@@ -1,0 +1,43 @@
+{
+  "name": "design.md",
+  "version": "0.1.0",
+  "description": "DESIGN.md design system skill - applies design tokens and guidelines to UI development",
+  "author": "LinearMouseSim Team",
+  "dependencies": [],
+  "capabilities": [
+    {
+      "name": "apply-design-tokens",
+      "description": "Apply design tokens from DESIGN.md to UI components",
+      "inputs": ["design_file_path", "component_type"],
+      "outputs": ["styled_component"]
+    },
+    {
+      "name": "validate-design",
+      "description": "Validate DESIGN.md file against spec",
+      "inputs": ["design_file_path"],
+      "outputs": ["validation_report"]
+    },
+    {
+      "name": "generate-theme",
+      "description": "Generate theme code from DESIGN.md tokens",
+      "inputs": ["design_file_path", "output_format"],
+      "outputs": ["theme_code"]
+    }
+  ],
+  "trigger": "when designing or modifying UI components, check DESIGN.md for design tokens",
+  "execution": {
+    "pre_condition": "DESIGN.md file exists in project root",
+    "steps": [
+      "1. Read DESIGN.md file from project root",
+      "2. Parse YAML front matter for design tokens",
+      "3. Apply colors, typography, spacing, and component styles",
+      "4. Validate implementation against design rationale"
+    ],
+    "post_condition": "UI components match design specifications"
+  },
+  "configuration": {
+    "design_file_path": "DESIGN.md",
+    "auto_apply": true,
+    "validation_enabled": true
+  }
+}

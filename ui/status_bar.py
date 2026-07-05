@@ -2,6 +2,7 @@
 
 import tkinter as tk
 from tkinter import ttk
+from .theme import Theme
 
 
 class StatusBar(tk.Frame):
@@ -10,38 +11,63 @@ class StatusBar(tk.Frame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         
-        self.configure(bg='#12122a')
+        self.configure(bg=Theme.SURFACE_CONTAINER_LOW)
         
         self._init_components()
     
     def _init_components(self):
         """初始化状态栏组件"""
         left_frame = ttk.Frame(self)
-        left_frame.pack(side=tk.LEFT, padx=15, pady=5)
+        left_frame.pack(side=tk.LEFT, padx=20, pady=5)
         
-        self.status_label = ttk.Label(left_frame, text='状态:', foreground='#8888aa', background='#12122a', font=('Segoe UI', 10))
-        self.status_label.pack(side=tk.LEFT, padx=(0, 5))
+        self.status_label = ttk.Label(
+            left_frame, text='状态:', 
+            foreground=Theme.ON_SURFACE_VARIANT, 
+            background=Theme.SURFACE_CONTAINER_LOW, 
+            font=(Theme.FONT_FAMILY, 10)
+        )
+        self.status_label.pack(side=tk.LEFT, padx=(0, 8))
         
-        self.status_canvas = tk.Canvas(left_frame, width=20, height=20, bg='#12122a', highlightthickness=0)
+        self.status_canvas = tk.Canvas(left_frame, width=24, height=24, bg=Theme.SURFACE_CONTAINER_LOW, highlightthickness=0)
         self.status_canvas.pack(side=tk.LEFT)
         self._update_status_indicator(False)
         
         center_frame = ttk.Frame(self)
         center_frame.pack(side=tk.LEFT, padx=30, pady=5)
         
-        self.angle_label = ttk.Label(center_frame, text='当前角度:', foreground='#8888aa', background='#12122a', font=('Segoe UI', 10))
-        self.angle_label.pack(side=tk.LEFT, padx=(0, 8))
+        self.angle_label = ttk.Label(
+            center_frame, text='当前角度:', 
+            foreground=Theme.ON_SURFACE_VARIANT, 
+            background=Theme.SURFACE_CONTAINER_LOW, 
+            font=(Theme.FONT_FAMILY, 10)
+        )
+        self.angle_label.pack(side=tk.LEFT, padx=(0, 10))
         
-        self.angle_value = ttk.Label(center_frame, text='0.0°', foreground='#4a90d9', background='#12122a', font=('Segoe UI', 14, 'bold'))
+        self.angle_value = ttk.Label(
+            center_frame, text='0.0°', 
+            foreground=Theme.SECONDARY, 
+            background=Theme.SURFACE_CONTAINER_LOW, 
+            font=(Theme.FONT_MONO, 16, 'bold')
+        )
         self.angle_value.pack(side=tk.LEFT)
         
         right_frame = ttk.Frame(self)
-        right_frame.pack(side=tk.RIGHT, padx=15, pady=5)
+        right_frame.pack(side=tk.RIGHT, padx=20, pady=5)
         
-        self.sim_status_label = ttk.Label(right_frame, text='模拟:', foreground='#8888aa', background='#12122a', font=('Segoe UI', 10))
-        self.sim_status_label.pack(side=tk.LEFT, padx=(0, 5))
+        self.sim_status_label = ttk.Label(
+            right_frame, text='模拟:', 
+            foreground=Theme.ON_SURFACE_VARIANT, 
+            background=Theme.SURFACE_CONTAINER_LOW, 
+            font=(Theme.FONT_FAMILY, 10)
+        )
+        self.sim_status_label.pack(side=tk.LEFT, padx=(0, 8))
         
-        self.sim_status_value = ttk.Label(right_frame, text='未启动', foreground='#e94560', background='#12122a', font=('Segoe UI', 10, 'bold'))
+        self.sim_status_value = ttk.Label(
+            right_frame, text='未启动', 
+            foreground=Theme.ERROR, 
+            background=Theme.SURFACE_CONTAINER_LOW, 
+            font=(Theme.FONT_FAMILY, 11, 'bold')
+        )
         self.sim_status_value.pack(side=tk.LEFT)
     
     def _update_status_indicator(self, is_active):
@@ -49,20 +75,20 @@ class StatusBar(tk.Frame):
         self.status_canvas.delete('all')
         
         if is_active:
-            color = '#00ff88'
-            glow_color = '#00ff88'
+            color = Theme.TERTIARY
+            glow_color = '#00cc6a'
         else:
-            color = '#ff4444'
-            glow_color = '#ff4444'
+            color = Theme.ERROR
+            glow_color = '#cc3333'
         
-        self.status_canvas.create_oval(1, 1, 19, 19, fill=glow_color, outline='', stipple='gray50')
-        self.status_canvas.create_oval(4, 4, 16, 16, fill=color, outline='#333355', width=1)
+        self.status_canvas.create_oval(2, 2, 22, 22, fill=glow_color, outline='', stipple='gray50')
+        self.status_canvas.create_oval(5, 5, 19, 19, fill=color, outline=Theme.OUTLINE_VARIANT, width=2)
     
     def set_active(self, is_active):
         """设置激活状态"""
         self._update_status_indicator(is_active)
         self.sim_status_value.config(text='运行中' if is_active else '未启动')
-        self.sim_status_value.config(foreground='#00ff88' if is_active else '#ff4444')
+        self.sim_status_value.config(foreground=Theme.TERTIARY if is_active else Theme.ERROR)
     
     def set_angle(self, angle):
         """设置角度显示"""
@@ -71,20 +97,18 @@ class StatusBar(tk.Frame):
     def set_sim_status(self, status_text, is_error=False):
         """设置模拟状态文本"""
         self.sim_status_value.config(text=status_text)
-        self.sim_status_value.config(foreground='#ff4444' if is_error else '#ffffff')
+        self.sim_status_value.config(foreground=Theme.ERROR if is_error else Theme.ON_SURFACE)
 
 
 if __name__ == '__main__':
-    # 测试代码
     root = tk.Tk()
     root.title('状态栏测试')
-    root.geometry('400x100')
-    root.configure(bg='#0f0f1a')
+    root.geometry('500x80')
+    root.configure(bg=Theme.SURFACE)
     
     status_bar = StatusBar(root)
     status_bar.pack(fill=tk.X, side=tk.BOTTOM)
     
-    # 测试状态切换
     def toggle_status():
         current = status_bar.sim_status_value.cget('text') == '运行中'
         status_bar.set_active(not current)

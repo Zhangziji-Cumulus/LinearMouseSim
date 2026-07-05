@@ -2,7 +2,7 @@
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-import keyboard
+from .theme import Theme
 from config.presets import PRESETS
 
 
@@ -20,15 +20,20 @@ class ParameterSlider(tk.Frame):
         self._min_val = min_val
         self._max_val = max_val
         
-        self.configure(bg='#16162a')
+        self.configure(bg=Theme.SURFACE_CONTAINER)
         
-        self.label = ttk.Label(self, text=label_text, foreground='#8888aa', background='#16162a', font=('Segoe UI', 10))
+        self.label = ttk.Label(
+            self, text=label_text, 
+            foreground=Theme.ON_SURFACE_VARIANT, 
+            background=Theme.SURFACE_CONTAINER, 
+            font=(Theme.FONT_FAMILY, 10, 'bold')
+        )
         self.label.pack(fill=tk.X, pady=(8, 3))
         
-        self.slider_container = tk.Frame(self, bg='#16162a')
+        self.slider_container = tk.Frame(self, bg=Theme.SURFACE_CONTAINER)
         self.slider_container.pack(fill=tk.X, pady=(0, 2))
         
-        self._snap_canvas = tk.Canvas(self.slider_container, bg='#16162a', highlightthickness=0, height=14)
+        self._snap_canvas = tk.Canvas(self.slider_container, bg=Theme.SURFACE_CONTAINER, highlightthickness=0, height=14)
         self._snap_canvas.pack(fill=tk.X, pady=(0, 0))
         
         self.slider = ttk.Scale(
@@ -44,7 +49,9 @@ class ParameterSlider(tk.Frame):
         
         self.value_label = ttk.Label(
             value_frame, text=f'{default_val:.1f}{unit}', 
-            foreground='#4a90d9', background='#16162a', font=('Segoe UI', 11, 'bold')
+            foreground=Theme.SECONDARY, 
+            background=Theme.SURFACE_CONTAINER, 
+            font=(Theme.FONT_MONO, 12, 'bold')
         )
         self.value_label.pack(side=tk.LEFT)
         
@@ -100,17 +107,15 @@ class ParameterSlider(tk.Frame):
         for point in self._snap_points:
             if self._min_val <= point <= self._max_val:
                 x_pos = ((point - self._min_val) / range_val) * canvas_width
-                # 绘制三角形标记
                 self._snap_canvas.create_polygon(
                     x_pos, 0,
                     x_pos - 4, 8,
                     x_pos + 4, 8,
-                    fill='#e94560', outline=''
+                    fill=Theme.PRIMARY, outline=''
                 )
-                # 绘制角度值标签
                 self._snap_canvas.create_text(
                     x_pos, 10,
-                    text=f'{int(point)}', fill='#e94560', font=('Arial', 7)
+                    text=f'{int(point)}', fill=Theme.PRIMARY, font=(Theme.FONT_MONO, 7)
                 )
     
     def get_value(self):
@@ -133,12 +138,13 @@ class ParameterPanel(tk.Frame):
         ('S型', 's_curve')
     ]
     
-    def __init__(self, parent, **kwargs):
+    def __init__(self, parent, app=None, **kwargs):
         super().__init__(parent, **kwargs)
+        self.app = app
         
-        self.configure(bg='#16162a')
+        self.configure(bg=Theme.SURFACE_CONTAINER)
         
-        self._canvas = tk.Canvas(self, bg='#16162a', highlightthickness=0)
+        self._canvas = tk.Canvas(self, bg=Theme.SURFACE_CONTAINER, highlightthickness=0)
         self._scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self._canvas.yview)
         self._inner_frame = ttk.Frame(self._canvas)
         
@@ -182,18 +188,20 @@ class ParameterPanel(tk.Frame):
         
         title_label = ttk.Label(
             inner, text='参数设置', 
-            foreground='#ffffff', background='#16162a',
-            font=('Segoe UI', 14, 'bold')
+            foreground=Theme.ON_SURFACE, 
+            background=Theme.SURFACE_CONTAINER,
+            font=(Theme.FONT_FAMILY, 16, 'bold')
         )
-        title_label.pack(fill=tk.X, pady=(15, 15), padx=10)
+        title_label.pack(fill=tk.X, pady=(15, 15), padx=15)
         
         preset_frame = ttk.Frame(inner)
-        preset_frame.pack(fill=tk.X, padx=10, pady=(0, 15))
+        preset_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
         
         preset_label = ttk.Label(
             preset_frame, text='游戏预设', 
-            foreground='#8888aa', background='#16162a',
-            font=('Segoe UI', 10)
+            foreground=Theme.ON_SURFACE_VARIANT, 
+            background=Theme.SURFACE_CONTAINER,
+            font=(Theme.FONT_FAMILY, 10, 'bold')
         )
         preset_label.pack(fill=tk.X, pady=(0, 5))
         
@@ -210,19 +218,19 @@ class ParameterPanel(tk.Frame):
             inner, '灵敏度', 0.1, 5.0, 1.0, resolution=0.1, unit='x',
             callback=self._on_parameter_change
         )
-        self._sliders['sensitivity'].pack(fill=tk.X, padx=10)
+        self._sliders['sensitivity'].pack(fill=tk.X, padx=15)
         
         self._sliders['smoothing_factor'] = ParameterSlider(
             inner, '平滑系数', 0.0, 0.99, 0.3, resolution=0.01, unit='',
             callback=self._on_parameter_change
         )
-        self._sliders['smoothing_factor'].pack(fill=tk.X, padx=10)
+        self._sliders['smoothing_factor'].pack(fill=tk.X, padx=15)
         
         self._sliders['deadzone'] = ParameterSlider(
             inner, '死区', 0, 20, 3, resolution=1, unit='px',
             callback=self._on_parameter_change
         )
-        self._sliders['deadzone'].pack(fill=tk.X, padx=10)
+        self._sliders['deadzone'].pack(fill=tk.X, padx=15)
         
         self._sliders['max_angle'] = ParameterSlider(
             inner, '最大舵角', 30, 720, 90, resolution=1, unit='°',
@@ -230,35 +238,37 @@ class ParameterPanel(tk.Frame):
             snap_points=[180, 360, 540, 720],
             snap_tolerance=15
         )
-        self._sliders['max_angle'].pack(fill=tk.X, padx=10)
+        self._sliders['max_angle'].pack(fill=tk.X, padx=15)
         
         self._sliders['dpi'] = ParameterSlider(
             inner, '鼠标DPI', 100, 25600, 800, resolution=100, unit='',
             callback=self._on_parameter_change
         )
-        self._sliders['dpi'].pack(fill=tk.X, padx=10)
+        self._sliders['dpi'].pack(fill=tk.X, padx=15)
         
         self._sliders['return_speed'] = ParameterSlider(
             inner, '回正速度', 0, 100, 0, resolution=1, unit='%',
             callback=self._on_parameter_change
         )
-        self._sliders['return_speed'].pack(fill=tk.X, padx=10)
+        self._sliders['return_speed'].pack(fill=tk.X, padx=15)
         
         self._reverse_var = tk.BooleanVar(value=False)
         self._reverse_checkbox = ttk.Checkbutton(
-            inner, text='反转方向盘方向（鼠标左移=顺时针，右移=逆时针）',
+            inner, text='反转方向盘方向',
             variable=self._reverse_var, command=self._on_parameter_change
         )
-        self._reverse_checkbox.pack(fill=tk.X, padx=10, pady=(5, 10))
+        self._reverse_checkbox.pack(fill=tk.X, padx=15, pady=(10, 15))
         
         curve_frame = ttk.Frame(inner)
-        curve_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
+        curve_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
         
         curve_label = ttk.Label(
             curve_frame, text='灵敏度曲线', 
-            foreground='#ffffff', background='#1a1a2e'
+            foreground=Theme.ON_SURFACE_VARIANT, 
+            background=Theme.SURFACE_CONTAINER,
+            font=(Theme.FONT_FAMILY, 10, 'bold')
         )
-        curve_label.pack(fill=tk.X, pady=(5, 5))
+        curve_label.pack(fill=tk.X, pady=(0, 8))
         
         self._curve_var = tk.StringVar(value='linear')
         self._curve_frame = ttk.Frame(curve_frame)
@@ -269,17 +279,18 @@ class ParameterPanel(tk.Frame):
                 self._curve_frame, text=text, variable=self._curve_var, 
                 value=value, command=self._on_parameter_change
             )
-            rb.pack(side=tk.LEFT, padx=(0, 10))
+            rb.pack(side=tk.LEFT, padx=(0, 12))
         
-        self._hotkey_frame = ttk.Frame(inner)
-        self._hotkey_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
+        hotkey_frame = ttk.Frame(inner)
+        hotkey_frame.pack(fill=tk.X, padx=15, pady=(0, 20))
         
         hotkey_label = ttk.Label(
-            self._hotkey_frame, text='快捷键配置', 
-            foreground='#8888aa', background='#16162a',
-            font=('Segoe UI', 10)
+            hotkey_frame, text='快捷键配置', 
+            foreground=Theme.ON_SURFACE_VARIANT, 
+            background=Theme.SURFACE_CONTAINER,
+            font=(Theme.FONT_FAMILY, 10, 'bold')
         )
-        hotkey_label.pack(fill=tk.X, pady=(5, 5))
+        hotkey_label.pack(fill=tk.X, pady=(0, 8))
         
         self._hotkey_actions = {
             'toggle': '切换模拟',
@@ -294,19 +305,23 @@ class ParameterPanel(tk.Frame):
         }
         
         for action, label_text in self._hotkey_actions.items():
-            hk_frame = ttk.Frame(self._hotkey_frame)
+            hk_frame = ttk.Frame(hotkey_frame)
             hk_frame.pack(fill=tk.X, pady=(2, 2))
             
             hk_label = ttk.Label(
                 hk_frame, text=label_text, width=12,
-                foreground='#cccccc', background='#16162a', font=('Segoe UI', 9)
+                foreground=Theme.ON_SURFACE, 
+                background=Theme.SURFACE_CONTAINER, 
+                font=(Theme.FONT_FAMILY, 9)
             )
             hk_label.pack(side=tk.LEFT)
             
             display_var = tk.StringVar(value='')
             display_label = ttk.Label(
-                hk_frame, textvariable=display_var, width=6,
-                foreground='#4a90d9', background='#16162a', font=('Segoe UI', 10, 'bold')
+                hk_frame, textvariable=display_var, width=8,
+                foreground=Theme.SECONDARY, 
+                background=Theme.SURFACE_CONTAINER, 
+                font=(Theme.FONT_MONO, 10, 'bold')
             )
             display_label.pack(side=tk.LEFT, padx=(10, 5))
             
@@ -445,16 +460,14 @@ class ParameterPanel(tk.Frame):
 
 
 if __name__ == '__main__':
-    # 测试代码
     root = tk.Tk()
     root.title('参数面板测试')
-    root.geometry('300x500')
-    root.configure(bg='#0f0f1a')
+    root.geometry('320x600')
+    root.configure(bg=Theme.SURFACE)
     
     panel = ParameterPanel(root)
     panel.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
     
-    # 测试回调
     def on_params_change(params):
         print('参数变化:', params)
     

@@ -1,23 +1,23 @@
 import tkinter as tk
 from tkinter import ttk
 import math
+from .theme import Theme
 from .status_bar import StatusBar
 from .parameter_panel import ParameterPanel
 from .tray_manager import TrayManager
-
 
 class SteeringWheelCanvas(tk.Canvas):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         self._angle = 0.0
+        self._target_angle = 0.0
         self._max_angle = 90
-        self._wheel_radius = 150
+        self._wheel_radius = 160
         self._center_x = 0
         self._center_y = 0
-        
-        self._spokes = []
-        self._ticks = []
-        self._tick_labels = []
+        self._deadzone = 0.0
+        self._smoothing_factor = 0.3
+        self._animation_active = False
         
         self.bind('<Configure>', self._on_resize)
         self._initialized = False
@@ -33,9 +33,6 @@ class SteeringWheelCanvas(tk.Canvas):
     
     def _create_wheel_elements(self):
         self.delete('all')
-        self._spokes = []
-        self._ticks = []
-        self._tick_labels = []
         
         self._center_x = self.winfo_width() // 2
         self._center_y = self.winfo_height() // 2
@@ -45,386 +42,513 @@ class SteeringWheelCanvas(tk.Canvas):
         center_y = self._center_y
         
         self.create_oval(
-            center_x - wheel_radius, center_y - wheel_radius,
-            center_x + wheel_radius, center_y + wheel_radius,
-            fill='#1a1a2e', outline='#16213e', width=3, tag='outer_ring'
+            center_x - wheel_radius - 12, center_y - wheel_radius - 12,
+            center_x + wheel_radius + 12, center_y + wheel_radius + 12,
+            fill='#000000', outline='', tag='shadow'
         )
         
-        inner_radius = wheel_radius * 0.7
+        self.create_oval(
+            center_x - wheel_radius, center_y - wheel_radius,
+            center_x + wheel_radius, center_y + wheel_radius,
+            fill=Theme.SURFACE_CONTAINER_LOWEST, outline=Theme.OUTLINE, width=2, tag='outer_ring'
+        )
+        
+        grip_radius = wheel_radius * 0.88
+        self.create_oval(
+            center_x - grip_radius, center_y - grip_radius,
+            center_x + grip_radius, center_y + grip_radius,
+            fill=Theme.SURFACE_CONTAINER_HIGHEST, outline=Theme.OUTLINE, width=2, tag='grip_area'
+        )
+        
+        for i in range(3):
+            grip_angle = i * 120
+            start_angle = grip_angle - 18
+            end_angle = grip_angle + 18
+            
+            inner_grip = wheel_radius * 0.62
+            outer_grip = wheel_radius * 0.96
+            
+            x1 = center_x + inner_grip * math.sin(math.radians(start_angle))
+            y1 = center_y - inner_grip * math.cos(math.radians(start_angle))
+            x2 = center_x + inner_grip * math.sin(math.radians(end_angle))
+            y2 = center_y - inner_grip * math.cos(math.radians(end_angle))
+            x3 = center_x + outer_grip * math.sin(math.radians(end_angle))
+            y3 = center_y - outer_grip * math.cos(math.radians(end_angle))
+            x4 = center_x + outer_grip * math.sin(math.radians(start_angle))
+            y4 = center_y - outer_grip * math.cos(math.radians(start_angle))
+            
+            self.create_polygon(
+                x1, y1, x2, y2, x3, y3, x4, y4,
+                fill=Theme.SECONDARY, outline='#3a7bc8', width=1, tag='grip'
+            )
+        
+        spoke_radius = wheel_radius * 0.45
+        for i in range(3):
+            angle = i * 120
+            rad = math.radians(angle)
+            x1 = center_x + spoke_radius * 0.3 * math.sin(rad)
+            y1 = center_y - spoke_radius * 0.3 * math.cos(rad)
+            x2 = center_x + spoke_radius * math.sin(rad)
+            y2 = center_y - spoke_radius * math.cos(rad)
+            self.create_line(x1, y1, x2, y2, fill=Theme.OUTLINE_VARIANT, width=4, tag='spoke')
+        
+        inner_radius = wheel_radius * 0.52
         self.create_oval(
             center_x - inner_radius, center_y - inner_radius,
             center_x + inner_radius, center_y + inner_radius,
-            fill='#0f0f1a', outline='#16213e', width=2, tag='inner_ring'
+            fill=Theme.SURFACE_CONTAINER_LOW, outline=Theme.OUTLINE_VARIANT, width=1, tag='inner_ring'
         )
         
-        center_radius = wheel_radius * 0.15
+        center_radius = wheel_radius * 0.16
         self.create_oval(
             center_x - center_radius, center_y - center_radius,
             center_x + center_radius, center_y + center_radius,
-            fill='#e94560', outline='#ffffff', width=2, tag='center_cap'
+            fill=Theme.PRIMARY, outline=Theme.ON_PRIMARY, width=2, tag='center_cap'
         )
-        self.create_text(center_x, center_y, text='L', fill='#ffffff', font=('Segoe UI', 16, 'bold'), tag='center_text')
+        
+        self.create_text(center_x, center_y, text='LMS', fill=Theme.ON_PRIMARY,
+                        font=(Theme.FONT_FAMILY, 12, 'bold'), tag='center_text')
         
         line_length = wheel_radius * 1.2
         self.create_line(
             center_x - line_length, center_y,
             center_x + line_length, center_y,
-            fill='#333344', width=1, dash=(4, 4), tag='indicator_line'
+            fill=Theme.OUTLINE_VARIANT, width=1, dash=(6, 4), tag='indicator_line'
+        )
+        
+        self.create_line(
+            center_x, center_y - line_length * 0.35,
+            center_x, center_y + line_length * 0.35,
+            fill=Theme.OUTLINE_VARIANT, width=1, dash=(6, 4), tag='indicator_line_vertical'
         )
         
         self.create_text(
-            center_x, center_y + wheel_radius + 35,
-            text='0.0°', fill='#ffffff', font=('Segoe UI', 16, 'bold'), tag='angle_text'
+            center_x, center_y + wheel_radius + 45,
+            text='0.0°', fill=Theme.ON_SURFACE, font=(Theme.FONT_MONO, 28, 'bold'),
+            tag='angle_text'
         )
         
         self.create_text(
-            center_x, center_y + wheel_radius + 60,
-            text='', fill='#8888aa', font=('Segoe UI', 10), tag='rotation_text'
+            center_x, center_y + wheel_radius + 72,
+            text='CENTER', fill=Theme.ON_SURFACE_VARIANT, font=(Theme.FONT_FAMILY, 11),
+            tag='rotation_text'
+        )
+        
+        left_arrow_x = center_x - wheel_radius - 75
+        right_arrow_x = center_x + wheel_radius + 75
+        
+        self.create_polygon(
+            left_arrow_x + 24, center_y - 20,
+            left_arrow_x, center_y,
+            left_arrow_x + 24, center_y + 20,
+            fill=Theme.OUTLINE_VARIANT, outline='', tag='left_arrow'
+        )
+        self.create_text(left_arrow_x + 45, center_y, text='LEFT', fill=Theme.ON_SURFACE_VARIANT,
+                        font=(Theme.FONT_FAMILY, 11, 'bold'), tag='left_label')
+        
+        self.create_polygon(
+            right_arrow_x - 24, center_y - 20,
+            right_arrow_x, center_y,
+            right_arrow_x - 24, center_y + 20,
+            fill=Theme.OUTLINE_VARIANT, outline='', tag='right_arrow'
+        )
+        self.create_text(right_arrow_x - 45, center_y, text='RIGHT', fill=Theme.ON_SURFACE_VARIANT,
+                        font=(Theme.FONT_FAMILY, 11, 'bold'), tag='right_label')
+        
+        for angle in [-90, -60, -30, 30, 60, 90]:
+            tick_radius = wheel_radius + 18
+            tick_length = 14 if abs(angle) % 30 == 0 else 7
+            
+            rad = math.radians(angle)
+            x1 = center_x + (tick_radius - tick_length) * math.sin(rad)
+            y1 = center_y - (tick_radius - tick_length) * math.cos(rad)
+            x2 = center_x + tick_radius * math.sin(rad)
+            y2 = center_y - tick_radius * math.cos(rad)
+            
+            tick_color = Theme.TERTIARY if abs(angle) <= self._max_angle else Theme.OUTLINE_VARIANT
+            self.create_line(x1, y1, x2, y2, fill=tick_color, width=2 if abs(angle) % 30 == 0 else 1,
+                           tag='tick')
+            
+            label_radius = wheel_radius + 38
+            lx = center_x + label_radius * math.sin(rad)
+            ly = center_y - label_radius * math.cos(rad)
+            
+            label_color = Theme.ON_SURFACE if abs(angle) <= self._max_angle else Theme.ON_SURFACE_VARIANT
+            self.create_text(lx, ly, text=f'{angle}°', fill=label_color,
+                           font=(Theme.FONT_MONO, 10, 'bold'), tag='tick_label')
+        
+        deadzone_radius = wheel_radius * 0.25
+        self.create_oval(
+            center_x - deadzone_radius, center_y - deadzone_radius,
+            center_x + deadzone_radius, center_y + deadzone_radius,
+            fill=Theme.SURFACE_CONTAINER_LOW, outline=Theme.OUTLINE_VARIANT, width=1,
+            tag='deadzone_indicator'
         )
         
         self.create_text(
-            center_x - wheel_radius - 50, center_y,
-            text='← 左转', fill='#e94560', font=('Segoe UI', 12), tag='left_label'
-        )
-        self.create_text(
-            center_x + wheel_radius + 50, center_y,
-            text='右转 →', fill='#e94560', font=('Segoe UI', 12), tag='right_label'
+            center_x, center_y + deadzone_radius + 20,
+            text='DEADZONE', fill=Theme.WARNING, font=(Theme.FONT_FAMILY, 8, 'bold'),
+            tag='deadzone_label'
         )
         
-        spokes = 3
-        for i in range(spokes):
-            spoke_angle = i * 120
-            rad = math.radians(spoke_angle)
-            x = wheel_radius * 0.9 * math.sin(rad)
-            y = -wheel_radius * 0.9 * math.cos(rad)
-            
-            spoke_id = self.create_line(
-                center_x, center_y,
-                center_x + x, center_y + y,
-                fill='#4a90d9', width=8, capstyle='round', tag='spoke'
-            )
-            self._spokes.append({'id': spoke_id, 'base_x': x, 'base_y': y})
-        
-        for tick_angle in range(-180, 180, 15):
-            rad = math.radians(tick_angle)
-            if abs(tick_angle) % 45 == 0:
-                inner = wheel_radius * 0.75
-                outer = wheel_radius * 0.95
-                width = 3
-            else:
-                inner = wheel_radius * 0.85
-                outer = wheel_radius * 0.95
-                width = 1
-            
-            x1 = inner * math.sin(rad)
-            y1 = -inner * math.cos(rad)
-            x2 = outer * math.sin(rad)
-            y2 = -outer * math.cos(rad)
-            
-            tick_id = self.create_line(
-                center_x + x1, center_y + y1,
-                center_x + x2, center_y + y2,
-                fill='#4a90d9', width=width, tag='tick'
-            )
-            self._ticks.append({'id': tick_id, 'base_x1': x1, 'base_y1': y1, 
-                               'base_x2': x2, 'base_y2': y2, 'width': width, 
-                               'tick_angle': tick_angle})
-            
-            if abs(tick_angle) % 45 == 0 and tick_angle != 0:
-                text_radius = wheel_radius * 0.65
-                tx = text_radius * math.sin(rad)
-                ty = -text_radius * math.cos(rad)
-                
-                label_id = self.create_text(
-                    center_x + tx, center_y + ty,
-                    text=f'{tick_angle}°', fill='#ffffff', font=('Arial', 9), tag='tick_label'
-                )
-                self._tick_labels.append({'id': label_id, 'base_tx': tx, 'base_ty': ty, 'tick_angle': tick_angle})
+        self._initialized = True
     
     def _update_wheel(self):
         if not self._initialized:
             self._create_wheel_elements()
-            self._initialized = True
             return
         
-        self._center_x = self.winfo_width() // 2
-        self._center_y = self.winfo_height() // 2
+        self.delete('all')
         
-        wheel_radius = self._wheel_radius
         center_x = self._center_x
         center_y = self._center_y
-        angle_rad = math.radians(-self._angle)
+        wheel_radius = self._wheel_radius
         
-        self.coords('outer_ring',
+        angle_rad = math.radians(self._angle)
+        
+        self.create_oval(
+            center_x - wheel_radius - 12, center_y - wheel_radius - 12,
+            center_x + wheel_radius + 12, center_y + wheel_radius + 12,
+            fill='#000000', outline='', tag='shadow'
+        )
+        
+        self.create_oval(
             center_x - wheel_radius, center_y - wheel_radius,
-            center_x + wheel_radius, center_y + wheel_radius
+            center_x + wheel_radius, center_y + wheel_radius,
+            fill=Theme.SURFACE_CONTAINER_LOWEST, outline=Theme.OUTLINE, width=2, tag='outer_ring'
         )
         
-        inner_radius = wheel_radius * 0.7
-        self.coords('inner_ring',
-            center_x - inner_radius, center_y - inner_radius,
-            center_x + inner_radius, center_y + inner_radius
+        grip_radius = wheel_radius * 0.88
+        self.create_oval(
+            center_x - grip_radius, center_y - grip_radius,
+            center_x + grip_radius, center_y + grip_radius,
+            fill=Theme.SURFACE_CONTAINER_HIGHEST, outline=Theme.OUTLINE, width=2, tag='grip_area'
         )
         
-        center_radius = wheel_radius * 0.15
-        self.coords('center_cap',
-            center_x - center_radius, center_y - center_radius,
-            center_x + center_radius, center_y + center_radius
-        )
-        self.coords('center_text', center_x, center_y)
-        
-        line_length = wheel_radius * 1.2
-        self.coords('indicator_line',
-            center_x - line_length, center_y,
-            center_x + line_length, center_y
-        )
-        
-        angle_text = f'{self._angle:.1f}°'
-        self.itemconfig('angle_text', text=angle_text)
-        self.coords('angle_text', center_x, center_y + wheel_radius + 35)
-        
-        if self._max_angle > 180:
-            rotation_count = int(abs(self._angle) // 360)
-            if rotation_count > 0:
-                direction = '顺时针' if self._angle > 0 else '逆时针'
-                rotation_text = f'已旋转 {rotation_count} 圈 ({direction})'
-            else:
-                rotation_text = ''
-            self.itemconfig('rotation_text', text=rotation_text)
-            self.coords('rotation_text', center_x, center_y + wheel_radius + 60)
-        else:
-            self.itemconfig('rotation_text', text='')
-        
-        self.coords('left_label', center_x - wheel_radius - 50, center_y)
-        self.coords('right_label', center_x + wheel_radius + 50, center_y)
-        
-        if self._angle > 1:
-            self.itemconfig('left_label', state='normal')
-            self.itemconfig('right_label', state='hidden')
-        elif self._angle < -1:
-            self.itemconfig('left_label', state='hidden')
-            self.itemconfig('right_label', state='normal')
-        else:
-            self.itemconfig('left_label', state='hidden')
-            self.itemconfig('right_label', state='hidden')
-        
-        for spoke in self._spokes:
-            rx, ry = self._rotate_point(spoke['base_x'], spoke['base_y'], angle_rad)
-            self.coords(spoke['id'], center_x, center_y, center_x + rx, center_y + ry)
-        
-        for tick in self._ticks:
-            rx1, ry1 = self._rotate_point(tick['base_x1'], tick['base_y1'], angle_rad)
-            rx2, ry2 = self._rotate_point(tick['base_x2'], tick['base_y2'], angle_rad)
+        for i in range(3):
+            grip_angle = i * 120 + self._angle
+            start_angle = grip_angle - 18
+            end_angle = grip_angle + 18
             
-            self.coords(tick['id'],
-                center_x + rx1, center_y + ry1,
-                center_x + rx2, center_y + ry2
+            inner_grip = wheel_radius * 0.62
+            outer_grip = wheel_radius * 0.96
+            
+            x1 = center_x + inner_grip * math.sin(math.radians(start_angle))
+            y1 = center_y - inner_grip * math.cos(math.radians(start_angle))
+            x2 = center_x + inner_grip * math.sin(math.radians(end_angle))
+            y2 = center_y - inner_grip * math.cos(math.radians(end_angle))
+            x3 = center_x + outer_grip * math.sin(math.radians(end_angle))
+            y3 = center_y - outer_grip * math.cos(math.radians(end_angle))
+            x4 = center_x + outer_grip * math.sin(math.radians(start_angle))
+            y4 = center_y - outer_grip * math.cos(math.radians(start_angle))
+            
+            self.create_polygon(
+                x1, y1, x2, y2, x3, y3, x4, y4,
+                fill=Theme.SECONDARY, outline='#3a7bc8', width=1, tag='grip'
             )
-            
-            color = '#e94560' if abs(tick['tick_angle']) >= self._max_angle else '#4a90d9'
-            self.itemconfig(tick['id'], fill=color)
         
-        for label in self._tick_labels:
-            rtx, rty = self._rotate_point(label['base_tx'], label['base_ty'], angle_rad)
-            self.coords(label['id'], center_x + rtx, center_y + rty)
+        spoke_radius = wheel_radius * 0.45
+        for i in range(3):
+            angle = i * 120 + self._angle
+            rad = math.radians(angle)
+            x1 = center_x + spoke_radius * 0.3 * math.sin(rad)
+            y1 = center_y - spoke_radius * 0.3 * math.cos(rad)
+            x2 = center_x + spoke_radius * math.sin(rad)
+            y2 = center_y - spoke_radius * math.cos(rad)
+            self.create_line(x1, y1, x2, y2, fill=Theme.OUTLINE_VARIANT, width=4, tag='spoke')
+        
+        inner_radius = wheel_radius * 0.52
+        self.create_oval(
+            center_x - inner_radius, center_y - inner_radius,
+            center_x + inner_radius, center_y + inner_radius,
+            fill=Theme.SURFACE_CONTAINER_LOW, outline=Theme.OUTLINE_VARIANT, width=1, tag='inner_ring'
+        )
+        
+        center_radius = wheel_radius * 0.16
+        self.create_oval(
+            center_x - center_radius, center_y - center_radius,
+            center_x + center_radius, center_y + center_radius,
+            fill=Theme.PRIMARY, outline=Theme.ON_PRIMARY, width=2, tag='center_cap'
+        )
+        
+        deadzone_radius = wheel_radius * (0.15 + self._deadzone / 50)
+        is_in_deadzone = abs(self._angle) < (self._max_angle * self._deadzone / 100)
+        deadzone_color = Theme.WARNING if is_in_deadzone else Theme.SURFACE_CONTAINER_LOW
+        deadzone_outline = Theme.WARNING if is_in_deadzone else Theme.OUTLINE_VARIANT
+        
+        self.create_oval(
+            center_x - deadzone_radius, center_y - deadzone_radius,
+            center_x + deadzone_radius, center_y + deadzone_radius,
+            fill=deadzone_color, outline=deadzone_outline, width=2, tag='deadzone_indicator'
+        )
+        
+        for i in range(-self._max_angle, self._max_angle + 1, 30):
+            if i == 0:
+                continue
+            
+            tick_radius_inner = wheel_radius * 0.55
+            tick_radius_outer = wheel_radius * 0.59
+            
+            angle_deg = i + self._angle
+            rad = math.radians(angle_deg)
+            
+            x1 = center_x + tick_radius_inner * math.sin(rad)
+            y1 = center_y - tick_radius_inner * math.cos(rad)
+            x2 = center_x + tick_radius_outer * math.sin(rad)
+            y2 = center_y - tick_radius_outer * math.cos(rad)
+            
+            color = Theme.TERTIARY if i % 60 == 0 else Theme.OUTLINE_VARIANT
+            self.create_line(x1, y1, x2, y2, fill=color, width=2 if i % 60 == 0 else 1, tag='tick')
+            
+            if i % 30 == 0:
+                label_radius = wheel_radius * 0.48
+                label_x = center_x + label_radius * math.sin(rad)
+                label_y = center_y - label_radius * math.cos(rad)
+                
+                label_text = f'{i}°'
+                font_color = Theme.TERTIARY if i % 60 == 0 else Theme.ON_SURFACE_VARIANT
+                self.create_text(label_x, label_y, text=label_text, fill=font_color,
+                                font=(Theme.FONT_MONO, 8), tag='angle_label')
+        
+        center_line_length = wheel_radius * 0.35
+        self.create_line(
+            center_x, center_y - center_line_length,
+            center_x, center_y + center_line_length,
+            fill=Theme.PRIMARY, width=3, tag='center_line'
+        )
+        self.create_line(
+            center_x - center_line_length, center_y,
+            center_x + center_line_length, center_y,
+            fill=Theme.PRIMARY, width=3, tag='center_line'
+        )
+        
+        self.create_text(center_x, center_y, text='LM', fill=Theme.ON_PRIMARY,
+                        font=(Theme.FONT_FAMILY, 12, 'bold'), tag='center_text')
+        
+        self.create_text(center_x, center_y + wheel_radius + 30,
+                        text=f'{self._angle:.1f}°', fill=Theme.ON_SURFACE,
+                        font=(Theme.FONT_MONO, 24, 'bold'), tag='angle_text')
+        
+        if self._angle > 0.5:
+            rotation_text = 'RIGHT'
+        elif self._angle < -0.5:
+            rotation_text = 'LEFT'
+        else:
+            rotation_text = 'CENTER'
+        
+        self.create_text(center_x, center_y + wheel_radius + 55,
+                        text=rotation_text, fill=Theme.SECONDARY,
+                        font=(Theme.FONT_FAMILY, 10), tag='rotation_text')
+        
+        arrow_size = 12
+        left_arrow_x = center_x - wheel_radius - 25
+        right_arrow_x = center_x + wheel_radius + 25
+        
+        left_color = Theme.TERTIARY if self._angle < -0.5 else Theme.OUTLINE_VARIANT
+        right_color = Theme.TERTIARY if self._angle > 0.5 else Theme.OUTLINE_VARIANT
+        
+        self.create_polygon(
+            left_arrow_x + arrow_size, center_y - arrow_size,
+            left_arrow_x, center_y,
+            left_arrow_x + arrow_size, center_y + arrow_size,
+            fill=left_color, outline=left_color, tag='left_arrow'
+        )
+        
+        self.create_polygon(
+            right_arrow_x - arrow_size, center_y - arrow_size,
+            right_arrow_x, center_y,
+            right_arrow_x - arrow_size, center_y + arrow_size,
+            fill=right_color, outline=right_color, tag='right_arrow'
+        )
     
-    def set_angle(self, angle):
-        self._angle = max(-self._max_angle, min(self._max_angle, angle))
+    def _animate(self):
+        if not self._animation_active:
+            return
+        
+        diff = self._target_angle - self._angle
+        if abs(diff) < 0.01:
+            self._angle = self._target_angle
+            self._animation_active = False
+        else:
+            self._angle += diff * (1 - self._smoothing_factor)
+        
         self._update_wheel()
+        
+        if self._animation_active:
+            self.after(16, self._animate)
     
-    def get_angle(self):
-        return self._angle
+    def set_angle(self, angle, smooth=True):
+        if smooth:
+            self._target_angle = angle
+            if not self._animation_active:
+                self._animation_active = True
+                self._animate()
+        else:
+            self._angle = angle
+            self._target_angle = angle
+            self._animation_active = False
+            self._update_wheel()
     
     def set_max_angle(self, max_angle):
         self._max_angle = max_angle
-        if self._initialized:
-            self._update_wheel()
-
+        self._initialized = False
+        self._update_wheel()
+    
+    def set_deadzone(self, deadzone):
+        self._deadzone = deadzone
+        self._update_wheel()
+    
+    def set_smoothing_factor(self, factor):
+        self._smoothing_factor = factor
 
 class MainWindow(tk.Tk):
     def __init__(self, app=None):
         super().__init__()
         self.app = app
-        self.tray_manager = None
+        self.title("LinearMouseSim")
+        self.geometry("900x650")
+        self.minsize(700, 500)
         
-        self.title('LinearMouseSim - 方向盘模拟器')
-        self.geometry('900x700')
-        self.configure(bg='#0a0a14')
+        self.configure(bg=Theme.SURFACE)
         
         self._setup_styles()
         
-        self.protocol('WM_DELETE_WINDOW', self._on_close)
-        self.bind('<Unmap>', self._on_minimize)
+        self._create_layout()
         
-        self._init_components()
-        self._init_tray()
+        self._current_angle = 0.0
+        
+        self.tray_manager = TrayManager(self)
     
     def _setup_styles(self):
         style = ttk.Style()
-        
         style.theme_use('clam')
         
-        style.configure('Modern.TFrame', background='#0f0f1a')
-        style.configure('Panel.TFrame', background='#16162a')
+        style.configure('Panel.TFrame', background=Theme.SURFACE_CONTAINER)
+        style.configure('Card.TFrame', background=Theme.SURFACE_CONTAINER_HIGH)
         
-        style.configure('Modern.TLabel', 
-            background='#0f0f1a', foreground='#ffffff',
-            font=('Segoe UI', 10)
-        )
-        style.configure('Panel.TLabel', 
-            background='#16162a', foreground='#ffffff',
-            font=('Segoe UI', 10)
-        )
+        style.configure('Heading.TLabel',
+                       background=Theme.SURFACE_CONTAINER,
+                       foreground=Theme.ON_SURFACE,
+                       font=(Theme.FONT_FAMILY, 14, 'bold'))
         
-        style.configure('Modern.TButton',
-            background='#1a1a3e', foreground='#ffffff',
-            bordercolor='#2a2a5e', borderwidth=1,
-            focuscolor='#2a2a5e', focusthickness=0
-        )
-        style.map('Modern.TButton',
-            background=[('active', '#2a2a5e')],
-            foreground=[('active', '#ffffff')]
-        )
+        style.configure('Label.TLabel',
+                       background=Theme.SURFACE_CONTAINER_HIGH,
+                       foreground=Theme.ON_SURFACE_VARIANT,
+                       font=(Theme.FONT_FAMILY, 11))
         
-        style.configure('Modern.TScale',
-            background='#16162a', troughcolor='#2a2a4a',
-            slidercolor='#4a90d9'
-        )
+        style.configure('Value.TLabel',
+                       background=Theme.SURFACE_CONTAINER_HIGH,
+                       foreground=Theme.ON_SURFACE,
+                       font=(Theme.FONT_MONO, 14, 'bold'))
         
-        style.configure('Modern.TCombobox',
-            fieldbackground='#1a1a3e', background='#1a1a3e',
-            foreground='#ffffff', selectbackground='#2a2a5e',
-            selectforeground='#ffffff'
-        )
+        style.configure('Primary.TButton',
+                       background=Theme.PRIMARY,
+                       foreground=Theme.ON_PRIMARY,
+                       font=(Theme.FONT_FAMILY, 11, 'bold'),
+                       padding=8,
+                       borderwidth=0)
         
-        style.configure('Modern.TCheckbutton',
-            background='#16162a', foreground='#ffffff',
-            focuscolor='#2a2a5e', focusthickness=0
-        )
+        style.configure('Secondary.TButton',
+                       background=Theme.SURFACE_CONTAINER_HIGH,
+                       foreground=Theme.ON_SURFACE,
+                       font=(Theme.FONT_FAMILY, 11),
+                       padding=8,
+                       borderwidth=1,
+                       bordercolor=Theme.OUTLINE)
         
-        style.configure('Modern.TRadiobutton',
-            background='#16162a', foreground='#ffffff',
-            focuscolor='#2a2a5e', focusthickness=0
-        )
+        style.configure('TScale',
+                       background=Theme.SURFACE_CONTAINER_HIGH,
+                       troughcolor=Theme.SURFACE_CONTAINER_LOW,
+                       sliderrelief='flat')
+        
+        style.map('Primary.TButton',
+                 background=[('active', '#ff6b85')])
+        
+        style.map('Secondary.TButton',
+                 background=[('active', Theme.SURFACE_CONTAINER_HIGHEST)])
     
-    def _init_components(self):
-        bg_canvas = tk.Canvas(self, bg='#0a0a14', highlightthickness=0)
-        bg_canvas.pack(fill=tk.BOTH, expand=True)
-        
-        bg_canvas.create_rectangle(
-            0, 0, 900, 700,
-            fill='#0a0a14', outline=''
-        )
-        
-        gradient_id = bg_canvas.create_rectangle(
-            0, 0, 900, 700,
-            fill='', outline=''
-        )
-        bg_canvas.tag_lower(gradient_id)
-        
-        main_frame = ttk.Frame(bg_canvas, padding=10, style='Modern.TFrame')
+    def _create_layout(self):
+        main_frame = ttk.Frame(self, style='Panel.TFrame', padding=0)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        left_panel = tk.Frame(main_frame, width=280, bg='#16162a', highlightbackground='#2a2a4a', highlightthickness=1)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        left_panel = ttk.Frame(main_frame, style='Panel.TFrame', width=320)
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8), pady=8)
         left_panel.pack_propagate(False)
         
-        shadow_canvas = tk.Canvas(left_panel, bg='#0a0a14', highlightthickness=0, width=280, height=10)
-        shadow_canvas.pack(side=tk.BOTTOM, fill=tk.X)
+        wheel_frame = ttk.Frame(main_frame, style='Panel.TFrame')
+        wheel_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=8)
         
-        self.param_panel = ParameterPanel(left_panel)
+        self.wheel_canvas = SteeringWheelCanvas(wheel_frame, bg=Theme.SURFACE_CONTAINER_LOW)
+        self.wheel_canvas.pack(fill=tk.BOTH, expand=True, padx=8)
+        
+        self.param_panel = ParameterPanel(left_panel, self)
         self.param_panel.pack(fill=tk.BOTH, expand=True)
         
-        if self.app:
-            self.param_panel.set_on_change_callback(self.app.update_steering_params)
-            self.param_panel.set_on_preset_callback(self.app.apply_preset)
-        
-        right_area = ttk.Frame(main_frame, style='Modern.TFrame')
-        right_area.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        wheel_container = tk.Frame(right_area, bg='#0f0f1a', highlightbackground='#2a2a4a', highlightthickness=1)
-        wheel_container.pack(fill=tk.BOTH, expand=True, padx=(0, 0), pady=(0, 0))
-        
-        self.wheel_canvas = SteeringWheelCanvas(
-            wheel_container, bg='#0f0f1a', highlightthickness=0
-        )
-        if self.app:
-            self.wheel_canvas.set_max_angle(self.app.config.get('steering.max_angle', 90))
-        self.wheel_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
         self.status_bar = StatusBar(self)
-        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
     
     def update_wheel_angle(self, angle):
-        if self.app:
-            self.wheel_canvas.set_max_angle(self.app.config.get('steering.max_angle', 90))
         self.wheel_canvas.set_angle(angle)
     
     def update_status_bar_angle(self, angle):
         self.status_bar.set_angle(angle)
     
+    def update_angle(self, angle):
+        self._current_angle = angle
+        self.wheel_canvas.set_angle(angle)
+        self.status_bar.set_angle(angle)
+    
+    def set_simulation_status(self, is_running):
+        self.status_bar.set_simulation_status(is_running)
+    
     def update_status(self, state):
-        self.status_bar.set_active(state == 'ON')
-        # 更新托盘图标状态
-        if self.tray_manager:
-            self.tray_manager.update_status(state == 'ON')
-    
-    def _init_tray(self):
-        """初始化系统托盘"""
-        self.tray_manager = TrayManager(self, self.app)
-    
-    def _on_close(self):
-        """关闭窗口时退出程序"""
-        from tkinter import messagebox
-        
-        result = messagebox.askyesno(
-            "退出 LinearMouseSim",
-            "确定要退出程序吗？\n\n退出后鼠标锁定将被释放。"
-        )
-        
-        if result:
-            if self.app:
-                self.app.cleanup()
-            self.quit()
-            self.destroy()
-    
-    def _on_minimize(self, event):
-        """窗口最小化时隐藏到托盘"""
-        # 检查是否是最小化操作（不是关闭或其他操作）
-        if self.state() == 'iconic':
-            self.hide_to_tray()
-    
-    def hide_to_tray(self):
-        """隐藏窗口到托盘"""
-        self.withdraw()
-        if self.tray_manager:
-            self.tray_manager.hide_window()
-    
-    def show_from_tray(self):
-        """从托盘显示窗口"""
-        self.deiconify()
-        self.lift()
-        self.focus_force()
+        is_active = state == 'ON'
+        self.status_bar.set_active(is_active)
     
     def update_parameter_display(self):
-        if self.app:
-            params = self.app.config.get_steering_params()
-            self.param_panel.set_parameters({
-                'sensitivity': params.get('sensitivity', 1.0),
-                'smoothing_factor': params.get('smoothing_factor', 0.3),
-                'deadzone': params.get('deadzone', 3),
-                'max_angle': params.get('max_angle', 90),
+        if self.app and self.app.config:
+            params = {
+                'sensitivity': self.app.config.get('steering.sensitivity', 1.0),
+                'smoothing_factor': self.app.config.get('steering.smoothing_factor', 0.3),
+                'deadzone': self.app.config.get('steering.deadzone', 3),
+                'max_angle': self.app.config.get('steering.max_angle', 90),
                 'dpi': self.app.config.get('mouse.dpi', 800),
-                'return_speed': params.get('return_speed', 0.0),
-                'curve_type': params.get('curve_type', 'linear'),
-                'reverse_direction': params.get('reverse_direction', False)
-            })
-            self.wheel_canvas.set_max_angle(params.get('max_angle', 90))
+                'return_speed': self.app.config.get('steering.return_speed', 0),
+                'curve_type': self.app.config.get('steering.curve_type', 'linear'),
+                'reverse_direction': self.app.config.get('steering.reverse_direction', False)
+            }
+            self.param_panel.set_parameters(params)
+    
+    def show_osd(self, message, duration=2000):
+        osd_window = tk.Toplevel(self)
+        osd_window.attributes('-topmost', True)
+        osd_window.attributes('-transparentcolor', '#000000')
+        osd_window.overrideredirect(True)
+        
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        osd_width = 350
+        osd_height = 90
+        
+        x = (screen_width - osd_width) // 2
+        y = screen_height // 4
+        
+        osd_window.geometry(f'{osd_width}x{osd_height}+{x}+{y}')
+        
+        frame = ttk.Frame(osd_window, style='Panel.TFrame')
+        frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        
+        label = ttk.Label(frame, text=message,
+                         font=(Theme.FONT_MONO, 22, 'bold'),
+                         foreground=Theme.ON_SURFACE,
+                         background=Theme.SURFACE_CONTAINER,
+                         justify=tk.CENTER)
+        label.pack(fill=tk.BOTH, expand=True)
+        
+        def hide_osd():
+            osd_window.destroy()
+        
+        self.after(duration, hide_osd)
     
     def run(self):
         self.mainloop()
-
-
-if __name__ == '__main__':
-    app = MainWindow()
-    app.run()
