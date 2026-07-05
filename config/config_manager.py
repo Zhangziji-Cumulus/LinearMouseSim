@@ -23,8 +23,9 @@ DEFAULT_CONFIG = {
         'curve_type': 'exponential',
         'exponential_power': 1.5,
         'reverse_direction': False,
-        'assist_threshold': 180,
-        'assist_min_delta': 20,
+        'assist_threshold': 300,
+        'assist_rate_threshold': 30,
+        'assist_rate_window': 0.10,
         'near_center_threshold': 50,
         'center_hold_ms': 500,
         'center_release_threshold': 200

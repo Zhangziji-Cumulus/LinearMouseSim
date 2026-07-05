@@ -519,7 +519,11 @@ class MainWindow(tk.Tk):
                 'dpi': self.app.config.get('mouse.dpi', 800),
                 'return_speed': self.app.config.get('steering.return_speed', 0),
                 'curve_type': self.app.config.get('steering.curve_type', 'linear'),
-                'reverse_direction': self.app.config.get('steering.reverse_direction', False)
+                'reverse_direction': self.app.config.get('steering.reverse_direction', False),
+                'assist_rate_window': self.app.config.get('steering.assist_rate_window', 0.05),
+                'assist_rate_threshold': self.app.config.get('steering.assist_rate_threshold', 100),
+                'center_hold_ms': self.app.config.get('steering.center_hold_ms', 500),
+                'center_release_threshold': self.app.config.get('steering.center_release_threshold', 200)
             }
             self.param_panel.set_parameters(params)
     

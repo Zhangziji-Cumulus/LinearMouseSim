@@ -270,6 +270,18 @@ class ParameterPanel(tk.Frame):
         )
         self._sliders['center_release_threshold'].pack(fill=tk.X, padx=15)
 
+        self._sliders['assist_rate_window'] = ParameterSlider(
+            inner, '回打检测时长', 20, 200, 100, resolution=10, unit='ms',
+            callback=self._on_parameter_change
+        )
+        self._sliders['assist_rate_window'].pack(fill=tk.X, padx=15)
+
+        self._sliders['assist_rate_threshold'] = ParameterSlider(
+            inner, '回打角度阈值', 50, 720, 100, resolution=10, unit='°',
+            callback=self._on_parameter_change
+        )
+        self._sliders['assist_rate_threshold'].pack(fill=tk.X, padx=15)
+
         self._reverse_var = tk.BooleanVar(value=False)
         self._reverse_checkbox = ttk.Checkbutton(
             inner, text='反转方向盘方向',
@@ -400,7 +412,9 @@ class ParameterPanel(tk.Frame):
             'curve_type': self._curve_var.get(),
             'reverse_direction': self._reverse_var.get(),
             'center_hold_ms': int(self._sliders['center_hold_ms'].get_value()),
-            'center_release_threshold': int(self._sliders['center_release_threshold'].get_value())
+            'center_release_threshold': int(self._sliders['center_release_threshold'].get_value()),
+            'assist_rate_window': self._sliders['assist_rate_window'].get_value() / 1000.0,
+            'assist_rate_threshold': self._sliders['assist_rate_threshold'].get_value()
         }
     
     def set_parameters(self, params):
@@ -408,6 +422,8 @@ class ParameterPanel(tk.Frame):
         for key, value in params.items():
             if key == 'return_speed':
                 value = value * 100.0
+            if key == 'assist_rate_window':
+                value = value * 1000.0
             if key in self._sliders:
                 self._sliders[key].set_value(value)
         if 'curve_type' in params:

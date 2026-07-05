@@ -85,8 +85,9 @@ class SteeringAlgorithm:
         # 当用户从大角度向中心回打时，按比例快速缩减累积位移，让回中更跟手
         # 进入近中心区后启动 500ms 中心检测，累计用户位移
         # 若累计位移超过阈值则释放让用户继续转向，否则保持中心
-        self.assist_threshold = kwargs.get('assist_threshold', 180.0)    # 角度超过此值(度)才启用辅助
-        self.assist_min_delta = kwargs.get('assist_min_delta', 20.0)     # 单帧回打幅度超过此值才触发（避免轻微抖动误触发）
+        self.assist_threshold = kwargs.get('assist_threshold', 300.0)    # 角度超过此值(度)才启用辅助
+        self.assist_rate_threshold = kwargs.get('assist_rate_threshold', 30.0)  # 检测期内角度变化超过此值才触发
+        self.assist_rate_window = kwargs.get('assist_rate_window', 0.10)       # 检测窗口（秒），默认100ms
         self.assist_return_rate = kwargs.get('assist_return_rate', 0.20)    # 每次回打缩减比例 (0~1)
         self.near_center_threshold = kwargs.get('near_center_threshold', 50.0)  # 进入中心检测的边界
         self.center_hold_ms = kwargs.get('center_hold_ms', 500)            # 中心检测持续时间(ms)
@@ -108,6 +109,15 @@ class SteeringAlgorithm:
         self._assist_from_direction = 0    # 进入 B 时的 delta_x 方向
         self._hold_delta_sum = 0           # C 态期间累计位移
         self._hold_start_time = 0          # C 态开始时间
+
+        # 预计算 accumulated_x 的有效上限
+        # 超过此值后 _apply_three_zone 已返回 max_angle，再多累积也没用
+        # 需要确保用户回打时能立即响应，不用先"消化"多余累积
+        self._max_useful_acc = self._compute_max_useful_acc()
+        # 连续回打累计：从回打开始持续累加位移，直到用户换向或停止
+        self._reversal_sum = 0.0          # 本次回打累计位移
+        self._reversal_start_time = 0     # 回打开始时间
+        self._reversal_direction = 0      # 回打方向（1=右，-1=左）
     
     @property
     def sensitivity(self):
@@ -151,6 +161,25 @@ class SteeringAlgorithm:
         self._assist_from_direction = 0
         self._hold_delta_sum = 0
         self._hold_start_time = 0
+        self._reversal_sum = 0
+        self._reversal_start_time = 0
+        self._reversal_direction = 0
+
+    def _compute_max_useful_acc(self):
+        """
+        找出 _apply_three_zone 首次达到 max_angle 时的 accumulated_x
+        超过此值后角度不再增加，回打时需要先"消化"多余累积，造成手感卡顿
+        """
+        # 在 [linear_end, saturation_end] 中二分查找
+        lo, hi = self.linear_end, self.saturation_end
+        while lo < hi:
+            mid = (lo + hi) // 2
+            result = self._apply_three_zone(mid)
+            if abs(result) >= self.max_angle:
+                hi = mid
+            else:
+                lo = mid + 1
+        return lo  # 精确到首次达到 max_angle 的点，无多余缓冲
     
     def set_parameter(self, param_name: str, value):
         """
@@ -178,8 +207,10 @@ class SteeringAlgorithm:
             self.reverse_direction = bool(value)
         elif param_name == 'assist_threshold':
             self.assist_threshold = max(0.0, value)
-        elif param_name == 'assist_min_delta':
-            self.assist_min_delta = max(0.0, value)
+        elif param_name == 'assist_rate_threshold':
+            self.assist_rate_threshold = max(0.0, value)
+        elif param_name == 'assist_rate_window':
+            self.assist_rate_window = max(0.01, value)
         elif param_name == 'near_center_threshold':
             self.near_center_threshold = max(0.0, value)
         elif param_name == 'center_hold_ms':
@@ -307,6 +338,30 @@ class SteeringAlgorithm:
             delta_x = -delta_x
             
         abs_delta = abs(delta_x)
+
+        # 记录回打方向位移到滑动窗口（只计与 accumulated_x 相反的位移）
+        # 不受灵敏度、曲线、三段式影响，只反映用户的回打意图
+        now = time.monotonic()
+        # 连续回打累计：一旦检测到回打，持续累加位移直到用户换向或停止
+        # 不受灵敏度、曲线、三段式、角度位置影响
+        now = time.monotonic()
+        if self._reversal_start_time > 0:
+            # 已跟踪回打：只要 delta_x 方向不变就继续累加
+            same_direction = (self._reversal_direction > 0 and delta_x > 0) or \
+                             (self._reversal_direction < 0 and delta_x < 0)
+            if same_direction:
+                self._reversal_sum += abs_delta
+            else:
+                self._reversal_sum = 0
+                self._reversal_start_time = 0
+        else:
+            # 未跟踪：检测新回打开始（基于角度方向）
+            moving_toward_center = (delta_x < 0 and self.previous_angle > 0) or \
+                                   (delta_x > 0 and self.previous_angle < 0)
+            if moving_toward_center:
+                self._reversal_start_time = now
+                self._reversal_direction = 1 if delta_x > 0 else -1
+                self._reversal_sum = abs_delta
         
         # 步骤1：死区过滤
         # 如果|delta_x| < deadzone，不累积增量，保持当前状态
@@ -324,9 +379,9 @@ class SteeringAlgorithm:
                 if abs(self.accumulated_x) < 0.01:
                     self.accumulated_x = 0.0
 
-            # 限制 accumulated_x 不超过饱和区上限
-            max_acc = self.saturation_end
-            self.accumulated_x = self._clamp(self.accumulated_x, -max_acc, max_acc)
+            # 限制 accumulated_x 不超过有效上限
+            # 避免超出后角度不再增大，但回打时仍需消化多余累积位移导致手感卡顿
+            self.accumulated_x = self._clamp(self.accumulated_x, -self._max_useful_acc, self._max_useful_acc)
             
             raw_angle = self._apply_three_zone(self.accumulated_x)
             if self.max_angle > 0:
@@ -373,30 +428,35 @@ class SteeringAlgorithm:
                     self._hold_start_time = time.monotonic()
         else:
             # ── 状态 A：普通态 ──
-            # 用角度来判断是否触发辅助，小角度（<阈值）不触发
-            # 同时要求回打幅度足够大，避免轻微抖动误触发
+            # 用角度来判断是否触发辅助，小角度不触发
+            # 同时检查单位时间内角度变化量：只有大幅快速回打才触发
             rough_angle = self._apply_three_zone(self.accumulated_x)
-            if abs(rough_angle) > self.assist_threshold and abs(delta_x) > self.assist_min_delta:
-                moving_toward_center = (delta_x < 0 and self.accumulated_x > 0) or \
-                                       (delta_x > 0 and self.accumulated_x < 0)
-                if moving_toward_center:
-                    # 触发辅助回中 → 进入状态 B
-                    self._assist_active = True
-                    self._assist_from_direction = 1 if delta_x > 0 else -1
-                    self.accumulated_x *= (1.0 - self.assist_return_rate)
-                else:
-                    self.accumulated_x += delta_x * self.sensitivity
+
+            still_reversing = (self._reversal_start_time > 0)
+            fast_reversal = self._reversal_sum >= self.assist_rate_threshold
+
+            if fast_reversal and still_reversing:
+                # 触发辅助回中 → 进入状态 B
+                self._assist_active = True
+                self._assist_from_direction = 1 if delta_x > 0 else -1
+                self.accumulated_x *= (1.0 - self.assist_return_rate)
+                # 进入辅助后清除回打累计
+                self._reversal_sum = 0
+                self._reversal_start_time = 0
             else:
                 self.accumulated_x += delta_x * self.sensitivity
+                # 非回打帧时清除累计
+                if not still_reversing and self._reversal_sum > 0:
+                    self._reversal_sum = 0
+                    self._reversal_start_time = 0
         
         # 步骤3：回正衰减（如果鼠标停止移动）
         if not is_moving and self.return_speed > 0:
             self.accumulated_x *= (1 - self.return_speed)
         
-        # 限制 accumulated_x 不超过饱和区上限
+        # 限制 accumulated_x 不超过有效上限
         # 避免超出后角度不再增大，但回打时仍需消化多余累积位移导致手感卡顿
-        max_acc = self.saturation_end
-        self.accumulated_x = self._clamp(self.accumulated_x, -max_acc, max_acc)
+        self.accumulated_x = self._clamp(self.accumulated_x, -self._max_useful_acc, self._max_useful_acc)
         
         # 步骤4：三段式灵敏度分区计算原始角度
         # 使用累积位移 accumulated_x 而非原始 delta_x
