@@ -8,8 +8,8 @@ PRESETS = {
             'deadzone': 2,
             'max_angle': 45,
             'return_speed': 0.02,
-            'curve_type': 'logarithmic',
-            'exponential_power': 1.5
+            'curve_type': 'linear',
+            'exponential_power': 2.0
         },
         'three_zone': {
             'deadzone_start': 0,
@@ -29,7 +29,7 @@ PRESETS = {
             'deadzone': 3,
             'max_angle': 90,
             'return_speed': 0.0,
-            'curve_type': 'exponential',
+            'curve_type': 'linear',
             'exponential_power': 1.5
         },
         'three_zone': {
@@ -71,8 +71,8 @@ PRESETS = {
             'deadzone': 5,
             'max_angle': 120,
             'return_speed': 0.01,
-            'curve_type': 's_curve',
-            'exponential_power': 1.5
+            'curve_type': 'linear',
+            'exponential_power': 1.8
         },
         'three_zone': {
             'deadzone_start': 0,

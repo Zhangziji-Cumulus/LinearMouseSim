@@ -7,7 +7,7 @@ from config.presets import PRESETS
 
 
 class ParameterSlider(tk.Frame):
-    """参数滑块组件"""
+    """参数滑块组件，支持手动输入精确值"""
     
     def __init__(self, parent, label_text, min_val, max_val, default_val, 
                  resolution=0.1, unit='', callback=None, snap_points=None, snap_tolerance=15):
@@ -19,17 +19,43 @@ class ParameterSlider(tk.Frame):
         self._snap_tolerance = snap_tolerance
         self._min_val = min_val
         self._max_val = max_val
+        self._resolution = resolution
+        self._setting_value = False
         
         self.configure(bg=Theme.SURFACE_CONTAINER)
         
+        # 标题行：标签 + 输入框
+        header_frame = tk.Frame(self, bg=Theme.SURFACE_CONTAINER)
+        header_frame.pack(fill=tk.X, pady=(8, 3))
+        
         self.label = ttk.Label(
-            self, text=label_text, 
+            header_frame, text=label_text, 
             foreground=Theme.ON_SURFACE_VARIANT, 
             background=Theme.SURFACE_CONTAINER, 
             font=(Theme.FONT_FAMILY, 10, 'bold')
         )
-        self.label.pack(fill=tk.X, pady=(8, 3))
+        self.label.pack(side=tk.LEFT)
         
+        # 手动输入框
+        self._entry_var = tk.StringVar(value=f'{default_val:.1f}')
+        self._entry = ttk.Entry(
+            header_frame, textvariable=self._entry_var, width=8,
+            font=(Theme.FONT_MONO, 10)
+        )
+        self._entry.pack(side=tk.RIGHT)
+        self._entry.bind('<Return>', self._on_entry_return)
+        self._entry.bind('<FocusOut>', self._on_entry_return)
+        self._entry.bind('<Key>', self._validate_entry_input)
+        
+        unit_label = ttk.Label(
+            header_frame, text=unit, width=4,
+            foreground=Theme.ON_SURFACE_VARIANT,
+            background=Theme.SURFACE_CONTAINER,
+            font=(Theme.FONT_FAMILY, 9)
+        )
+        unit_label.pack(side=tk.RIGHT, padx=(0, 4))
+        
+        # 滑块区域
         self.slider_container = tk.Frame(self, bg=Theme.SURFACE_CONTAINER)
         self.slider_container.pack(fill=tk.X, pady=(0, 2))
         
@@ -44,25 +70,65 @@ class ParameterSlider(tk.Frame):
         
         self.slider.bind('<ButtonRelease-1>', self._on_slider_release)
         
-        value_frame = ttk.Frame(self)
-        value_frame.pack(fill=tk.X)
-        
+        # 值显示
         self.value_label = ttk.Label(
-            value_frame, text=f'{default_val:.1f}{unit}', 
+            self, text=f'{default_val:.1f}{unit}', 
             foreground=Theme.SECONDARY, 
             background=Theme.SURFACE_CONTAINER, 
             font=(Theme.FONT_MONO, 12, 'bold')
         )
-        self.value_label.pack(side=tk.LEFT)
+        self.value_label.pack(fill=tk.X)
         
         self.slider.after(100, self._draw_snap_markers)
     
     def _on_slider_change(self, value):
         """滑块值变化事件"""
+        if self._setting_value:
+            return
         float_val = float(value)
-        self.value_label.config(text=f'{float_val:.1f}{self._unit}')
+        # 整数显示整数，浮点数保留两位小数
+        if float_val == int(float_val):
+            display_val = int(float_val)
+        else:
+            display_val = round(float_val, 2)
+        self.value_label.config(text=f'{display_val}{self._unit}')
+        self._entry_var.set(f'{display_val}')
         if self._callback:
             self._callback(float_val)
+    
+    def _on_entry_return(self, event):
+        """手动输入确认，只允许数字和浮点数"""
+        try:
+            input_text = self._entry_var.get().strip()
+            import re
+            if not re.match(r'^-?\d*\.?\d*$', input_text):
+                raise ValueError("无效输入")
+            
+            new_val = float(input_text) if input_text else self._min_val
+            new_val = round(new_val, 2)
+            new_val = max(self._min_val, min(self._max_val, new_val))
+            self.slider.set(new_val)
+            # ttk.Scale.set() 不触发 command 回调，必须手动调用
+            self._on_slider_change(str(new_val))
+        except ValueError:
+            current = self.slider.get()
+            display_val = int(current) if current == int(current) else round(current, 2)
+            self._entry_var.set(f'{display_val}')
+    
+    def _validate_entry_input(self, event):
+        """实时验证输入，只允许数字、小数点、负号"""
+        # 允许控制键（退格、删除、方向键等）
+        if event.keysym in ('BackSpace', 'Delete', 'Left', 'Right', 'Home', 'End', 'Tab'):
+            return
+        
+        # 允许Ctrl+A/C/V/X
+        if event.state & 0x4:  # Ctrl键
+            return
+        
+        # 只允许数字、小数点、负号
+        allowed_chars = set('0123456789.-')
+        if event.char and event.char not in allowed_chars:
+            return 'break'  # 阻止输入
     
     def _on_slider_release(self, event):
         """滑块释放事件，处理吸附逻辑"""
@@ -124,16 +190,14 @@ class ParameterSlider(tk.Frame):
     
     def set_value(self, value):
         """设置值"""
+        self._setting_value = True
         self.slider.set(value)
-        self.value_label.config(text=f'{value:.1f}{self._unit}')
+        self._setting_value = False
+        self._on_slider_change(str(value))
 
 
 class ParameterPanel(tk.Frame):
     """参数调节面板类"""
-    
-    CURVE_TYPES = [
-        ('指数', 'exponential'),
-    ]
     
     def __init__(self, parent, app=None, **kwargs):
         super().__init__(parent, **kwargs)
@@ -161,6 +225,7 @@ class ParameterPanel(tk.Frame):
         self._hotkey_buttons = {}
         self._hotkey_manager = None
         self._recording_action = None
+        self._cancel_id = None
         
         self._build_content()
     
@@ -224,21 +289,21 @@ class ParameterPanel(tk.Frame):
         self._sliders['smoothing_factor'].pack(fill=tk.X, padx=15)
         
         self._sliders['deadzone'] = ParameterSlider(
-            inner, '死区', 0, 20, 3, resolution=1, unit='px',
+            inner, '死区', 0, 50, 3, resolution=1, unit='px',
             callback=self._on_parameter_change
         )
         self._sliders['deadzone'].pack(fill=tk.X, padx=15)
         
         self._sliders['max_angle'] = ParameterSlider(
-            inner, '最大舵角', 30, 720, 90, resolution=1, unit='°',
+            inner, '最大舵角', 10, 1800, 90, resolution=1, unit='°',
             callback=self._on_parameter_change,
-            snap_points=[180, 360, 540, 720],
+            snap_points=[45, 90, 180, 360, 540, 720, 900],
             snap_tolerance=15
         )
         self._sliders['max_angle'].pack(fill=tk.X, padx=15)
         
         self._sliders['dpi'] = ParameterSlider(
-            inner, '鼠标DPI', 100, 25600, 800, resolution=100, unit='',
+            inner, '鼠标DPI', 50, 25600, 800, resolution=50, unit='',
             callback=self._on_parameter_change
         )
         self._sliders['dpi'].pack(fill=tk.X, padx=15)
@@ -258,26 +323,14 @@ class ParameterPanel(tk.Frame):
         )
         assist_label.pack(fill=tk.X, padx=15, pady=(10, 3))
 
-        self._sliders['center_hold_ms'] = ParameterSlider(
-            inner, '中心保持时长', 100, 1500, 500, resolution=50, unit='ms',
-            callback=self._on_parameter_change
-        )
-        self._sliders['center_hold_ms'].pack(fill=tk.X, padx=15)
-
-        self._sliders['center_release_threshold'] = ParameterSlider(
-            inner, '释放位移阈值', 50, 1000, 200, resolution=10, unit='',
-            callback=self._on_parameter_change
-        )
-        self._sliders['center_release_threshold'].pack(fill=tk.X, padx=15)
-
         self._sliders['assist_rate_window'] = ParameterSlider(
-            inner, '回打检测时长', 20, 200, 100, resolution=10, unit='ms',
+            inner, '回打检测时长', 0, 500, 100, resolution=10, unit='ms',
             callback=self._on_parameter_change
         )
         self._sliders['assist_rate_window'].pack(fill=tk.X, padx=15)
 
         self._sliders['assist_rate_threshold'] = ParameterSlider(
-            inner, '回打角度阈值', 50, 720, 100, resolution=10, unit='°',
+            inner, '回打位移阈值', 0, 2000, 100, resolution=10, unit='px',
             callback=self._on_parameter_change
         )
         self._sliders['assist_rate_threshold'].pack(fill=tk.X, padx=15)
@@ -288,29 +341,52 @@ class ParameterPanel(tk.Frame):
             variable=self._reverse_var, command=self._on_parameter_change
         )
         self._reverse_checkbox.pack(fill=tk.X, padx=15, pady=(10, 15))
-        
-        curve_frame = ttk.Frame(inner)
-        curve_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
-        
-        curve_label = ttk.Label(
-            curve_frame, text='灵敏度曲线', 
-            foreground=Theme.ON_SURFACE_VARIANT, 
+
+        # 三段式参数区
+        three_zone_label = ttk.Label(
+            inner, text='三段式映射',
+            foreground=Theme.ON_SURFACE_VARIANT,
             background=Theme.SURFACE_CONTAINER,
             font=(Theme.FONT_FAMILY, 10, 'bold')
         )
-        curve_label.pack(fill=tk.X, pady=(0, 8))
-        
-        self._curve_var = tk.StringVar(value='linear')
-        self._curve_frame = ttk.Frame(curve_frame)
-        self._curve_frame.pack(fill=tk.X)
-        
-        for text, value in self.CURVE_TYPES:
-            rb = ttk.Radiobutton(
-                self._curve_frame, text=text, variable=self._curve_var, 
-                value=value, command=self._on_parameter_change
-            )
-            rb.pack(side=tk.LEFT, padx=(0, 12))
-        
+        three_zone_label.pack(fill=tk.X, padx=15, pady=(10, 3))
+
+        self._sliders['linear_end'] = ParameterSlider(
+            inner, '像素→角度映射', 10, 5000, 500, resolution=10, unit='px',
+            callback=self._on_parameter_change
+        )
+        self._sliders['linear_end'].pack(fill=tk.X, padx=15)
+
+        # 辅助回中补充参数
+        self._sliders['assist_threshold'] = ParameterSlider(
+            inner, '辅助触发角度', 0, 900, 300, resolution=10, unit='°',
+            callback=self._on_parameter_change
+        )
+        self._sliders['assist_threshold'].pack(fill=tk.X, padx=15)
+
+        self._sliders['assist_return_rate'] = ParameterSlider(
+            inner, '归中缩减比例', 0, 100, 20, resolution=1, unit='%',
+            callback=self._on_parameter_change
+        )
+        self._sliders['assist_return_rate'].pack(fill=tk.X, padx=15)
+
+        self._sliders['near_center_threshold'] = ParameterSlider(
+            inner, '中心检测边界', 0, 500, 50, resolution=1, unit='px',
+            callback=self._on_parameter_change
+        )
+        self._sliders['near_center_threshold'].pack(fill=tk.X, padx=15)
+
+        # cm/360° 显示标签
+        self._cm360_frame = tk.Frame(inner, bg=Theme.SURFACE_CONTAINER)
+        self._cm360_frame.pack(fill=tk.X, padx=15, pady=(2, 8))
+        self._cm360_label = ttk.Label(
+            self._cm360_frame, text='当前 ≈ --.- cm/360°',
+            foreground=Theme.SECONDARY,
+            background=Theme.SURFACE_CONTAINER,
+            font=(Theme.FONT_MONO, 11, 'bold')
+        )
+        self._cm360_label.pack(side=tk.LEFT)
+
         hotkey_frame = ttk.Frame(inner)
         hotkey_frame.pack(fill=tk.X, padx=15, pady=(0, 20))
         
@@ -331,7 +407,8 @@ class ParameterPanel(tk.Frame):
             'sensitivity_preset_2': '灵敏度预设2',
             'sensitivity_preset_3': '灵敏度预设3',
             'cycle_curve': '切换曲线',
-            'wheel_adjust': '滚轮调节键'
+            'wheel_adjust': '滚轮调节键',
+            'temp_sensitivity_half': '临时降敏'
         }
         
         for action, label_text in self._hotkey_actions.items():
@@ -409,12 +486,13 @@ class ParameterPanel(tk.Frame):
             'max_angle': self._sliders['max_angle'].get_value(),
             'dpi': self._sliders['dpi'].get_value(),
             'return_speed': self._sliders['return_speed'].get_value() / 100.0,
-            'curve_type': self._curve_var.get(),
             'reverse_direction': self._reverse_var.get(),
-            'center_hold_ms': int(self._sliders['center_hold_ms'].get_value()),
-            'center_release_threshold': int(self._sliders['center_release_threshold'].get_value()),
             'assist_rate_window': self._sliders['assist_rate_window'].get_value() / 1000.0,
-            'assist_rate_threshold': self._sliders['assist_rate_threshold'].get_value()
+            'assist_rate_threshold': self._sliders['assist_rate_threshold'].get_value(),
+            'linear_end': self._sliders['linear_end'].get_value(),
+            'assist_threshold': self._sliders['assist_threshold'].get_value(),
+            'assist_return_rate': self._sliders['assist_return_rate'].get_value() / 100.0,
+            'near_center_threshold': self._sliders['near_center_threshold'].get_value(),
         }
     
     def set_parameters(self, params):
@@ -422,14 +500,17 @@ class ParameterPanel(tk.Frame):
         for key, value in params.items():
             if key == 'return_speed':
                 value = value * 100.0
-            if key == 'assist_rate_window':
+            elif key == 'assist_rate_window':
                 value = value * 1000.0
+            elif key == 'assist_return_rate':
+                value = value * 100.0
             if key in self._sliders:
                 self._sliders[key].set_value(value)
-        if 'curve_type' in params:
-            self._curve_var.set(params['curve_type'])
         if 'reverse_direction' in params:
             self._reverse_var.set(bool(params['reverse_direction']))
+    
+    def update_cm360_display(self, cm360_value: float):
+        self._cm360_label.config(text=f'当前 ≈ {cm360_value:.1f} cm/360°')
     
     def set_hotkey_manager(self, hotkey_manager):
         """设置热键管理器"""

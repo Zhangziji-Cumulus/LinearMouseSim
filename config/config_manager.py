@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import copy
 
 DEFAULT_CONFIG = {
     'hotkeys': {
@@ -12,7 +13,8 @@ DEFAULT_CONFIG = {
         'sensitivity_preset_2': 'f6',
         'sensitivity_preset_3': 'f7',
         'cycle_curve': 'f8',
-        'wheel_adjust': 'ctrl'
+        'wheel_adjust': 'ctrl',
+        'temp_sensitivity_half': 'shift'
     },
     'steering': {
         'sensitivity': 1.0,
@@ -20,15 +22,14 @@ DEFAULT_CONFIG = {
         'deadzone': 3,
         'max_angle': 90,
         'return_speed': 0.0,
-        'curve_type': 'exponential',
+        'curve_type': 'linear',
         'exponential_power': 1.5,
         'reverse_direction': False,
         'assist_threshold': 300,
-        'assist_rate_threshold': 30,
+        'assist_return_rate': 0.20,
+        'assist_rate_threshold': 50,
         'assist_rate_window': 0.10,
-        'near_center_threshold': 50,
-        'center_hold_ms': 500,
-        'center_release_threshold': 200
+        'near_center_threshold': 50
     },
     'three_zone': {
         'deadzone_start': 0,
@@ -69,10 +70,10 @@ class ConfigManager:
                     return self._merge_config(DEFAULT_CONFIG, loaded)
             except Exception as e:
                 print(f"配置文件加载失败: {e}")
-                return DEFAULT_CONFIG.copy()
+                return copy.deepcopy(DEFAULT_CONFIG)
         else:
             self._save_config(DEFAULT_CONFIG)
-            return DEFAULT_CONFIG.copy()
+            return copy.deepcopy(DEFAULT_CONFIG)
     
     def _merge_config(self, default, loaded):
         result = default.copy()
@@ -148,7 +149,7 @@ class ConfigManager:
         return self.config['app'].copy()
     
     def reset_to_default(self):
-        self.config = DEFAULT_CONFIG.copy()
+        self.config = copy.deepcopy(DEFAULT_CONFIG)
         return self.save()
     
     def export_config(self, file_path):

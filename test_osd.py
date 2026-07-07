@@ -24,9 +24,9 @@ def test_osd():
     osd.show_sensitivity(2.0)
     time.sleep(1.5)
     
-    # 测试显示曲线类型
-    print("\n测试显示曲线类型...")
-    osd.show_curve_type('exponential')
+    # 测试显示临时降敏
+    print("\n测试显示临时降敏...")
+    osd.show_temp_sensitivity(True)
     time.sleep(1.5)
     
     # 测试显示开关状态
