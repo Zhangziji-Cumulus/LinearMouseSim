@@ -69,13 +69,13 @@ class SteeringAlgorithm:
         self.dpi = self._clamp(kwargs.get('dpi', 800), 100, 25600)
         
         # 角度限制参数
-        self.max_angle = self._clamp(kwargs.get('max_angle', 90), 30, 720)
+        self.max_angle = self._clamp(kwargs.get('max_angle', 90), 10, 1800)
         
         # 回正惯性参数
         self.return_speed = self._clamp(kwargs.get('return_speed', 0.0), 0.0, 1.0)
         
-        # 曲线类型参数（固定为指数曲线）
-        self.curve_type = 'exponential'
+        # 曲线类型参数（默认线性曲线）
+        self.curve_type = kwargs.get('curve_type', 'linear')
         self.exponential_power = self._clamp(kwargs.get('exponential_power', 1.5), 1.0, 3.0)
         
         # 方向反转参数
@@ -83,35 +83,28 @@ class SteeringAlgorithm:
 
         # 辅助回中参数
         # 当用户从大角度向中心回打时，按比例快速缩减累积位移，让回中更跟手
-        # 进入近中心区后启动 500ms 中心检测，累计用户位移
-        # 若累计位移超过阈值则释放让用户继续转向，否则保持中心
         self.assist_threshold = kwargs.get('assist_threshold', 300.0)    # 角度超过此值(度)才启用辅助
         self.assist_rate_threshold = kwargs.get('assist_rate_threshold', 30.0)  # 检测期内角度变化超过此值才触发
         self.assist_rate_window = kwargs.get('assist_rate_window', 0.10)       # 检测窗口（秒），默认100ms
         self.assist_return_rate = kwargs.get('assist_return_rate', 0.20)    # 每次回打缩减比例 (0~1)
         self.near_center_threshold = kwargs.get('near_center_threshold', 50.0)  # 进入中心检测的边界
-        self.center_hold_ms = kwargs.get('center_hold_ms', 500)            # 中心检测持续时间(ms)
-        self.center_release_threshold = kwargs.get('center_release_threshold', 200) # 释放阈值
+
+        # 临时半灵敏度模式
+        self._temp_sensitivity_half = False
         
-        # 三段式灵敏度分区参数
-        self.deadzone_start = max(0, kwargs.get('deadzone_start', 0))
-        self.deadzone_end = max(self.deadzone_start, kwargs.get('deadzone_end', 3))
-        self.linear_start = max(self.deadzone_end, kwargs.get('linear_start', 3))
-        self.linear_end = max(self.linear_start, kwargs.get('linear_end', 500))
-        self.saturation_start = max(self.linear_end, kwargs.get('saturation_start', 500))
-        self.saturation_end = max(self.saturation_start, kwargs.get('saturation_end', 1000))
+        # 映射参数
+        self.deadzone = self._clamp(kwargs.get('deadzone', 3), 0, 50)
+        self.linear_end = max(1, kwargs.get('linear_end', 500))  # 多少像素 = max_angle
         
         # 状态变量
         self.previous_angle = 0.0
         self.accumulated_x = 0.0
         # 辅助回中状态机
-        self._assist_active = False        # 状态 B 或 C
-        self._assist_from_direction = 0    # 进入 B 时的 delta_x 方向
-        self._hold_delta_sum = 0           # C 态期间累计位移
-        self._hold_start_time = 0          # C 态开始时间
+        self._assist_active = False        # 是否在辅助归中
+        self._assist_from_direction = 0    # 进入辅助时的 delta_x 方向
 
         # 预计算 accumulated_x 的有效上限
-        # 超过此值后 _apply_three_zone 已返回 max_angle，再多累积也没用
+        # 超过此值后 _apply_mapping 已返回 max_angle，再多累积也没用
         # 需要确保用户回打时能立即响应，不用先"消化"多余累积
         self._max_useful_acc = self._compute_max_useful_acc()
         # 连续回打累计：从回打开始持续累加位移，直到用户换向或停止
@@ -135,7 +128,10 @@ class SteeringAlgorithm:
         返回：
             经过DPI换算后的有效灵敏度系数
         """
-        return self.base_sensitivity / (self.dpi / 800.0)
+        effective = self.base_sensitivity / (self.dpi / 800.0)
+        if self._temp_sensitivity_half:
+            effective /= 2.0
+        return effective
     
     def _clamp(self, value, min_val, max_val):
         """
@@ -159,27 +155,22 @@ class SteeringAlgorithm:
         self.accumulated_x = 0.0
         self._assist_active = False
         self._assist_from_direction = 0
-        self._hold_delta_sum = 0
-        self._hold_start_time = 0
         self._reversal_sum = 0
         self._reversal_start_time = 0
         self._reversal_direction = 0
 
+    def set_temp_half_sensitivity(self, enabled: bool):
+        """设置临时半灵敏度模式（按住键时灵敏度减半）"""
+        self._temp_sensitivity_half = enabled
+
     def _compute_max_useful_acc(self):
         """
-        找出 _apply_three_zone 首次达到 max_angle 时的 accumulated_x
+        找出 _apply_mapping 首次达到 max_angle 时的 accumulated_x
         超过此值后角度不再增加，回打时需要先"消化"多余累积，造成手感卡顿
         """
-        # 在 [linear_end, saturation_end] 中二分查找
-        lo, hi = self.linear_end, self.saturation_end
-        while lo < hi:
-            mid = (lo + hi) // 2
-            result = self._apply_three_zone(mid)
-            if abs(result) >= self.max_angle:
-                hi = mid
-            else:
-                lo = mid + 1
-        return lo  # 精确到首次达到 max_angle 的点，无多余缓冲
+        # 简化映射：angle = accumulated_x * (max_angle / linear_end)
+        # 当 accumulated_x >= linear_end 时，angle = max_angle
+        return self.linear_end
     
     def set_parameter(self, param_name: str, value):
         """
@@ -196,9 +187,10 @@ class SteeringAlgorithm:
         elif param_name == 'smoothing_factor':
             self.smoothing_factor = self._clamp(value, 0.0, 1.0)
         elif param_name == 'deadzone':
-            self.deadzone = self._clamp(value, 0, 20)
+            self.deadzone = self._clamp(value, 0, 50)
         elif param_name == 'max_angle':
-            self.max_angle = self._clamp(value, 30, 720)
+            self.max_angle = self._clamp(value, 10, 1800)
+            self._max_useful_acc = self._compute_max_useful_acc()
         elif param_name == 'return_speed':
             self.return_speed = self._clamp(value, 0.0, 1.0)
         elif param_name == 'exponential_power':
@@ -213,28 +205,33 @@ class SteeringAlgorithm:
             self.assist_rate_window = max(0.01, value)
         elif param_name == 'near_center_threshold':
             self.near_center_threshold = max(0.0, value)
-        elif param_name == 'center_hold_ms':
-            self.center_hold_ms = max(0, value)
-        elif param_name == 'center_release_threshold':
-            self.center_release_threshold = max(0.0, value)
         elif param_name == 'assist_return_rate':
             self.assist_return_rate = max(0.0, min(1.0, value))
-        elif param_name == 'deadzone_start':
-            self.deadzone_start = max(0, value)
-        elif param_name == 'deadzone_end':
-            self.deadzone_end = max(self.deadzone_start, value)
-        elif param_name == 'linear_start':
-            self.linear_start = max(self.deadzone_end, value)
         elif param_name == 'linear_end':
-            self.linear_end = max(self.linear_start, value)
-        elif param_name == 'saturation_start':
-            self.saturation_start = max(self.linear_end, value)
-        elif param_name == 'saturation_end':
-            self.saturation_end = max(self.saturation_start, value)
+            self.linear_end = max(1, value)
+            self._max_useful_acc = self._compute_max_useful_acc()
     
+    def get_cm360(self) -> float:
+        """返回当前灵敏度对应的 cm/360° 值"""
+        if self.dpi <= 0 or self.max_angle <= 0:
+            return 0.0
+        total_pixels = self._max_useful_acc * (360.0 / self.max_angle)
+        return total_pixels * 2.54 / self.dpi
+
+    def calculate_sensitivity_for_cm360(self, cm_per_360: float) -> float:
+        """根据目标 cm/360° 计算所需的基础灵敏度"""
+        if cm_per_360 <= 0 or self.dpi <= 0 or self.max_angle <= 0:
+            return self.base_sensitivity
+        target_total_pixels = cm_per_360 * self.dpi / 2.54
+        target_max_useful = target_total_pixels * self.max_angle / 360.0
+        if self._max_useful_acc > 0:
+            ratio = target_max_useful / self._max_useful_acc
+            return self._clamp(self.base_sensitivity * ratio, 0.1, 5.0)
+        return self.base_sensitivity
+
     def _apply_curve(self, normalized_input: float) -> float:
         """
-        应用指数灵敏度曲线
+        应用灵敏度曲线
         
         参数：
             normalized_input: 归一化输入值 (-1.0 到 1.0)
@@ -242,70 +239,50 @@ class SteeringAlgorithm:
         返回：
             应用曲线后的归一化输出值 (-1.0 到 1.0)
             
-        指数曲线：y = sign(x) * |x|^n
-        特点：小位移时变化平缓（精确控制），大位移时变化急剧（快速响应）
+        支持曲线类型：
+        - linear: 线性曲线 y = x，鼠标移多少方向盘转多少
+        - exponential: 指数曲线 y = sign(x) * |x|^n，小幅慢大幅快
         """
         if normalized_input == 0:
             return 0.0
             
+        if self.curve_type == 'linear':
+            return normalized_input
+        
+        # 指数曲线
         abs_input = abs(normalized_input)
         sign = 1 if normalized_input >= 0 else -1
         return sign * math.pow(abs_input, self.exponential_power)
     
-    def _apply_three_zone(self, delta_x: int) -> float:
+    def _apply_mapping(self, accumulated_x: float) -> float:
         """
-        三段式灵敏度分区处理，基于delta_x计算原始角度
+        简化的角度映射：accumulated_x → 角度
         
         参数：
-            delta_x: 鼠标位移量（像素）
+            accumulated_x: 累积的鼠标位移（像素）
             
         返回：
-            经过分区处理后的角度值
+            方向盘角度（-max_angle 到 +max_angle）
             
-        分区定义：
-        1. 死区 [deadzone_start, deadzone_end]: 输出0，过滤微小抖动
-        2. 线性区 [linear_start, linear_end]: 线性映射，精确控制
-        3. 饱和区 [saturation_start, saturation_end]: 渐进饱和，防止角度突变
+        映射逻辑：
+        1. 死区：|accumulated_x| < deadzone 时输出0
+        2. 线性映射：angle = accumulated_x * (max_angle / linear_end)
+        3. 钳位：限制在 [-max_angle, +max_angle]
         """
-        abs_delta = abs(delta_x)
-        sign = 1 if delta_x >= 0 else -1
+        abs_acc = abs(accumulated_x)
+        sign = 1 if accumulated_x >= 0 else -1
         
-        # 计算线性区斜率：确保线性区结束时达到最大角度的80%
-        linear_range = self.linear_end - self.deadzone_end
-        if linear_range <= 0:
-            linear_slope = self.max_angle / 100.0
-        else:
-            linear_slope = (self.max_angle * 0.8) / linear_range
-        
-        if abs_delta <= self.deadzone_end:
-            # 死区：输出0
+        # 死区
+        if abs_acc < self.deadzone:
             return 0.0
-            
-        elif abs_delta <= self.linear_end:
-            # 线性区：线性映射
-            effective_delta = abs_delta - self.deadzone_end
-            return sign * effective_delta * linear_slope
-            
-        elif abs_delta <= self.saturation_end:
-            # 饱和区：渐进饱和
-            # 使用cos函数实现平滑饱和过渡
-            # 输入范围：[linear_end, saturation_end] -> [0, pi/2]
-            t = (abs_delta - self.linear_end) / (self.saturation_end - self.linear_end)
-            # cos(t * pi/2) 在t=0时为1，t=1时为0
-            saturation_factor = math.cos(t * math.pi / 2)
-            
-            # 基础值为线性区最大角度
-            base_angle = (self.linear_end - self.deadzone_end) * linear_slope
-            
-            # 剩余增量按饱和因子衰减
-            remaining_delta = abs_delta - self.linear_end
-            additional_angle = remaining_delta * linear_slope * saturation_factor
-            
-            return sign * min(self.max_angle, base_angle + additional_angle)
-            
+        
+        # 线性映射：accumulated_x / linear_end * max_angle
+        if self.linear_end > 0:
+            angle = sign * min(abs_acc, self.linear_end) * (self.max_angle / self.linear_end)
         else:
-            # 超出饱和区：直接输出最大角度
-            return sign * self.max_angle
+            angle = sign * abs_acc
+        
+        return self._clamp(angle, -self.max_angle, self.max_angle)
     
     def update(self, delta_x: int, is_moving: bool = True) -> float:
         """
@@ -341,7 +318,6 @@ class SteeringAlgorithm:
 
         # 记录回打方向位移到滑动窗口（只计与 accumulated_x 相反的位移）
         # 不受灵敏度、曲线、三段式影响，只反映用户的回打意图
-        now = time.monotonic()
         # 连续回打累计：一旦检测到回打，持续累加位移直到用户换向或停止
         # 不受灵敏度、曲线、三段式、角度位置影响
         now = time.monotonic()
@@ -371,9 +347,7 @@ class SteeringAlgorithm:
                 self.accumulated_x *= (1.0 - self.assist_return_rate)
                 if abs(self.accumulated_x) < self.near_center_threshold:
                     self.accumulated_x = 0.0
-                    # 进入中心检测态
-                    self._hold_delta_sum = 0.0
-                    self._hold_start_time = time.monotonic()
+                    self._assist_active = False
             elif not is_moving and self.return_speed > 0:
                 self.accumulated_x *= (1 - self.return_speed)
                 if abs(self.accumulated_x) < 0.01:
@@ -383,7 +357,7 @@ class SteeringAlgorithm:
             # 避免超出后角度不再增大，但回打时仍需消化多余累积位移导致手感卡顿
             self.accumulated_x = self._clamp(self.accumulated_x, -self._max_useful_acc, self._max_useful_acc)
             
-            raw_angle = self._apply_three_zone(self.accumulated_x)
+            raw_angle = self._apply_mapping(self.accumulated_x)
             if self.max_angle > 0:
                 normalized_angle = raw_angle / self.max_angle
                 normalized_angle = self._apply_curve(normalized_angle)
@@ -400,43 +374,25 @@ class SteeringAlgorithm:
         # 状态 C（检测态）：锁定 0，累计位移 500ms，超阈值则释放
 
         if self._assist_active:
-            # ── 状态 B 或 C ──
-            if self._hold_start_time > 0:
-                # ── 状态 C：中心检测态 ──
-                self.accumulated_x = 0.0
-                self._hold_delta_sum += abs(delta_x)
-
-                elapsed_ms = (time.monotonic() - self._hold_start_time) * 1000
-                if elapsed_ms >= self.center_hold_ms:
-                    # 500ms 到，判断是否释放
-                    if self._hold_delta_sum > self.center_release_threshold:
-                        # 用户确实想继续转 → 释放，应用累积位移
-                        self.accumulated_x += delta_x * self.sensitivity
-                    # 否则保持 0
-                    self._assist_active = False
-                    self._hold_start_time = 0
-                    self._hold_delta_sum = 0.0
+            # ── 辅助回中态 ──
+            # 按比例缩减 accumulated_x，到达中心则退出
+            if abs(self.accumulated_x) > self.near_center_threshold:
+                self.accumulated_x *= (1.0 - self.assist_return_rate)
             else:
-                # ── 状态 B：辅助归中态 ──
-                if abs(self.accumulated_x) > self.near_center_threshold:
-                    # 距离中心还远，继续比例缩减
-                    self.accumulated_x *= (1.0 - self.assist_return_rate)
-                else:
-                    # 进入近中心区 → 进入状态 C
-                    self.accumulated_x = 0.0
-                    self._hold_delta_sum = 0.0
-                    self._hold_start_time = time.monotonic()
+                # 到达中心，退出辅助
+                self.accumulated_x = 0.0
+                self._assist_active = False
         else:
             # ── 状态 A：普通态 ──
             # 用角度来判断是否触发辅助，小角度不触发
             # 同时检查单位时间内角度变化量：只有大幅快速回打才触发
-            rough_angle = self._apply_three_zone(self.accumulated_x)
+            rough_angle = self._apply_mapping(self.accumulated_x)
 
             still_reversing = (self._reversal_start_time > 0)
             fast_reversal = self._reversal_sum >= self.assist_rate_threshold
 
             if fast_reversal and still_reversing:
-                # 触发辅助回中 → 进入状态 B
+                # 触发辅助回中 → 进入辅助
                 self._assist_active = True
                 self._assist_from_direction = 1 if delta_x > 0 else -1
                 self.accumulated_x *= (1.0 - self.assist_return_rate)
@@ -460,7 +416,7 @@ class SteeringAlgorithm:
         
         # 步骤4：三段式灵敏度分区计算原始角度
         # 使用累积位移 accumulated_x 而非原始 delta_x
-        raw_angle = self._apply_three_zone(self.accumulated_x)
+        raw_angle = self._apply_mapping(self.accumulated_x)
         
         # 步骤5：归一化并应用灵敏度曲线
         if self.max_angle > 0:
@@ -472,6 +428,17 @@ class SteeringAlgorithm:
         # current_angle = alpha * raw_angle + (1-alpha) * previous_angle
         current_angle = self.smoothing_factor * raw_angle + \
                         (1 - self.smoothing_factor) * self.previous_angle
+        
+        # 角度追上逻辑：当角度在增大方向时，允许追上 raw_angle
+        # 解决低 smoothing_factor 导致角度永远达不到 max_angle 的问题
+        if abs(raw_angle) > abs(self.previous_angle):
+            # 角度在增大，确保不小于上一帧
+            if abs(current_angle) < abs(self.previous_angle):
+                current_angle = self.previous_angle
+            # 也不能小于 raw_angle 与 previous_angle 的中间值
+            min_abs = (abs(raw_angle) + abs(self.previous_angle)) / 2
+            if abs(current_angle) < min_abs:
+                current_angle = min_abs * (1 if raw_angle >= 0 else -1)
         
         # 步骤7：最大舵角限制
         current_angle = self._clamp(current_angle, -self.max_angle, self.max_angle)

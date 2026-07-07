@@ -12,6 +12,8 @@ class HotkeyManager:
         self.enabled = True
         self.wheel_adjust_key = 'ctrl'
         self.wheel_adjust_active = False
+        self._temp_sensitivity_key = None
+        self._temp_sensitivity_hooks = []
         
     def register_callback(self, action, callback):
         self.callbacks[action] = callback
@@ -29,29 +31,9 @@ class HotkeyManager:
         
         if action in self.callbacks:
             try:
-                if args:
-                    self.callbacks[action](*args)
-                else:
-                    self.callbacks[action]()
+                self.callbacks[action]()
             except Exception as e:
                 print(f"热键回调执行失败 {action}: {e}")
-    
-    def _on_wheel(self, event):
-        """处理滚轮事件"""
-        if not self.enabled:
-            return
-        
-        # 检查是否按住调节键
-        if not keyboard.is_pressed(self.wheel_adjust_key):
-            return
-        
-        # 滚轮向上增加灵敏度，向下降低灵敏度
-        if event.event_type == 'down':
-            # 滚轮向下滚动
-            self._trigger_action('wheel_decrease_sensitivity')
-        elif event.event_type == 'up':
-            # 滚轮向上滚动
-            self._trigger_action('wheel_increase_sensitivity')
     
     def load_hotkeys(self):
         self.unregister_all()
@@ -81,6 +63,44 @@ class HotkeyManager:
             keyboard.on_scroll(self._on_scroll)
         except AttributeError:
             print("当前版本的 keyboard 库不支持 on_scroll，滚轮调节功能暂不可用")
+        
+        # 加载临时半灵敏度键配置
+        temp_key = hotkey_config.get('temp_sensitivity_half', '')
+        if temp_key:
+            self._register_temp_sensitivity_key(temp_key)
+    
+    def _register_temp_sensitivity_key(self, key):
+        """注册临时半灵敏度键的按下/释放监听"""
+        # 清除之前的监听
+        self._unregister_temp_sensitivity_key()
+        self._temp_sensitivity_key = key
+        
+        try:
+            hooks = keyboard.on_press_key(key, self._on_temp_sensitivity_down, suppress=False)
+            self._temp_sensitivity_hooks.append(hooks)
+            hooks = keyboard.on_release_key(key, self._on_temp_sensitivity_up, suppress=False)
+            self._temp_sensitivity_hooks.append(hooks)
+            print(f"已注册临时半灵敏度键: {key}")
+        except Exception as e:
+            print(f"临时半灵敏度键注册失败 ({key}): {e}")
+    
+    def _unregister_temp_sensitivity_key(self):
+        """取消临时半灵敏度键的监听"""
+        for hook in self._temp_sensitivity_hooks:
+            try:
+                keyboard.unhook(hook)
+            except Exception:
+                pass
+        self._temp_sensitivity_hooks = []
+        self._temp_sensitivity_key = None
+    
+    def _on_temp_sensitivity_down(self, event):
+        """临时半灵敏度键按下回调"""
+        self._trigger_action('temp_sensitivity_half_down')
+    
+    def _on_temp_sensitivity_up(self, event):
+        """临时半灵敏度键释放回调"""
+        self._trigger_action('temp_sensitivity_half_up')
     
     def _on_scroll(self, event):
         """处理滚轮滚动事件"""
@@ -99,8 +119,17 @@ class HotkeyManager:
     
     def register_hotkey(self, action, hotkey):
         try:
-            keyboard.add_hotkey(hotkey, self._trigger_action, args=[action], suppress=False)
-            self.hotkeys[action] = hotkey
+            if hotkey.lower() == 'shift':
+                def _on_shift_press(event):
+                    self._trigger_action(action, True)
+                def _on_shift_release(event):
+                    self._trigger_action(action, False)
+                keyboard.on_press_key('shift', _on_shift_press)
+                keyboard.on_release_key('shift', _on_shift_release)
+                self.hotkeys[action] = hotkey
+            else:
+                keyboard.add_hotkey(hotkey, self._trigger_action, args=[action], suppress=False)
+                self.hotkeys[action] = hotkey
             print(f"已注册热键 {action}: {hotkey}")
         except Exception as e:
             print(f"热键注册失败 {action} ({hotkey}): {e}")
@@ -112,12 +141,6 @@ class HotkeyManager:
             except Exception:
                 pass
         self.hotkeys = {}
-        
-        # 移除滚轮事件监听
-        try:
-            keyboard.unhook_all()
-        except Exception:
-            pass
     
     def set_hotkey(self, action, hotkey):
         if action in self.hotkeys:
@@ -132,9 +155,24 @@ class HotkeyManager:
             self.wheel_adjust_key = hotkey
             return True
         
+        if action == 'temp_sensitivity_half':
+            if hotkey:
+                self._register_temp_sensitivity_key(hotkey)
+            else:
+                self._unregister_temp_sensitivity_key()
+            return True
+        
         if hotkey:
             try:
-                keyboard.add_hotkey(hotkey, self._trigger_action, args=[action], suppress=False)
+                if hotkey.lower() == 'shift':
+                    def _on_shift_press(event):
+                        self._trigger_action(action, True)
+                    def _on_shift_release(event):
+                        self._trigger_action(action, False)
+                    keyboard.on_press_key('shift', _on_shift_press)
+                    keyboard.on_release_key('shift', _on_shift_release)
+                else:
+                    keyboard.add_hotkey(hotkey, self._trigger_action, args=[action], suppress=False)
                 self.hotkeys[action] = hotkey
                 return True
             except Exception as e:

@@ -11,10 +11,10 @@ class OSDManager:
         self._timer = None
         self._lock = threading.Lock()
         self._root = None
-        
-        self.curve_type_map = {
-            'exponential': '指数',
-        }
+    
+    def set_root(self, root):
+        """设置主窗口的 Tk 根实例，避免创建第二个根窗口"""
+        self._root = root
     
     def _ensure_root(self):
         if self._root is None:
@@ -80,9 +80,8 @@ class OSDManager:
         text = f'灵敏度: {sensitivity:.2f}'
         self._show_text(text)
     
-    def show_curve_type(self, curve_type):
-        curve_name = self.curve_type_map.get(curve_type, curve_type)
-        text = f'曲线: {curve_name}'
+    def show_temp_sensitivity(self, enabled: bool):
+        text = '临时降敏: 开' if enabled else '临时降敏: 关'
         self._show_text(text)
     
     def show_toggle_state(self, state):
