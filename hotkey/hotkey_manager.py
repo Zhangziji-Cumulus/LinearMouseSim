@@ -1,5 +1,4 @@
 import keyboard
-import threading
 import time
 
 class HotkeyManager:

@@ -62,22 +62,23 @@ class SteeringAlgorithm:
         # 灵敏度参数
         self.base_sensitivity = self._clamp(kwargs.get('sensitivity', 1.0), 0.1, 5.0)
         self.smoothing_factor = self._clamp(kwargs.get('smoothing_factor', 0.3), 0.0, 1.0)
-        self.deadzone = self._clamp(kwargs.get('deadzone', 3), 0, 20)
-        
+        self.deadzone = self._clamp(kwargs.get('deadzone', 3), 0, 50)
+        self.linear_end = max(1, kwargs.get('linear_end', 500))  # 多少像素 = max_angle
+
         # DPI参数（用于灵敏度自动换算）
         # 基准DPI为800，不同DPI会自动调整有效灵敏度
         self.dpi = self._clamp(kwargs.get('dpi', 800), 100, 25600)
-        
+
         # 角度限制参数
         self.max_angle = self._clamp(kwargs.get('max_angle', 90), 10, 1800)
-        
+
         # 回正惯性参数
         self.return_speed = self._clamp(kwargs.get('return_speed', 0.0), 0.0, 1.0)
-        
+
         # 曲线类型参数（默认线性曲线）
         self.curve_type = kwargs.get('curve_type', 'linear')
         self.exponential_power = self._clamp(kwargs.get('exponential_power', 1.5), 1.0, 3.0)
-        
+
         # 方向反转参数
         self.reverse_direction = kwargs.get('reverse_direction', False)
 
@@ -88,13 +89,11 @@ class SteeringAlgorithm:
         self.assist_rate_window = kwargs.get('assist_rate_window', 0.10)       # 检测窗口（秒），默认100ms
         self.assist_return_rate = kwargs.get('assist_return_rate', 0.20)    # 每次回打缩减比例 (0~1)
         self.near_center_threshold = kwargs.get('near_center_threshold', 50.0)  # 进入中心检测的边界
+        self.center_hold_ms = kwargs.get('center_hold_ms', 100)            # 中心检测保持时长（ms）
+        self.center_release_threshold = kwargs.get('center_release_threshold', 200)  # 释放位移阈值
 
         # 临时半灵敏度模式
         self._temp_sensitivity_half = False
-        
-        # 映射参数
-        self.deadzone = self._clamp(kwargs.get('deadzone', 3), 0, 50)
-        self.linear_end = max(1, kwargs.get('linear_end', 500))  # 多少像素 = max_angle
         
         # 状态变量
         self.previous_angle = 0.0
@@ -102,6 +101,8 @@ class SteeringAlgorithm:
         # 辅助回中状态机
         self._assist_active = False        # 是否在辅助归中
         self._assist_from_direction = 0    # 进入辅助时的 delta_x 方向
+        self._hold_delta_sum = 0           # 中心检测态累计位移
+        self._hold_start_time = 0          # 中心检测态开始时间
 
         # 预计算 accumulated_x 的有效上限
         # 超过此值后 _apply_mapping 已返回 max_angle，再多累积也没用
@@ -155,6 +156,8 @@ class SteeringAlgorithm:
         self.accumulated_x = 0.0
         self._assist_active = False
         self._assist_from_direction = 0
+        self._hold_delta_sum = 0
+        self._hold_start_time = 0
         self._reversal_sum = 0
         self._reversal_start_time = 0
         self._reversal_direction = 0
@@ -207,6 +210,10 @@ class SteeringAlgorithm:
             self.near_center_threshold = max(0.0, value)
         elif param_name == 'assist_return_rate':
             self.assist_return_rate = max(0.0, min(1.0, value))
+        elif param_name == 'center_hold_ms':
+            self.center_hold_ms = max(0, value)
+        elif param_name == 'center_release_threshold':
+            self.center_release_threshold = max(0.0, value)
         elif param_name == 'linear_end':
             self.linear_end = max(1, value)
             self._max_useful_acc = self._compute_max_useful_acc()
@@ -371,37 +378,57 @@ class SteeringAlgorithm:
         # ===== 辅助回中三状态机 =====
         # 状态 A（普通态）：正常累积，检测到大角度回打则进入 B
         # 状态 B（归中态）：比例缩减 accumulated_x，到达近中心则进入 C
-        # 状态 C（检测态）：锁定 0，累计位移 500ms，超阈值则释放
+        # 状态 C（检测态）：锁定 0，等待一段时间后退出辅助模式
 
-        if self._assist_active:
-            # ── 辅助回中态 ──
-            # 按比例缩减 accumulated_x，到达中心则退出
+        if self._assist_active and self._hold_start_time > 0:
+            # ── 状态 C：中心检测态 ──
+            # accumulated_x 已经接近 0，保持为 0
+            self.accumulated_x = 0.0
+            elapsed_ms = (time.monotonic() - self._hold_start_time) * 1000
+            if elapsed_ms >= self.center_hold_ms:
+                # 检测态结束，直接退出辅助模式
+                # 不释放累积的位移，因为 accumulated_x 已经接近 0
+                # 用户想要继续转向会在普通态中累积新位移
+                self._assist_active = False
+                self._hold_start_time = 0
+                self._hold_delta_sum = 0.0
+            
+            # 状态C期间直接计算角度并返回，不执行后续逻辑
+            raw_angle = self._apply_mapping(self.accumulated_x)
+            if self.max_angle > 0:
+                normalized_angle = raw_angle / self.max_angle
+                normalized_angle = self._apply_curve(normalized_angle)
+                raw_angle = normalized_angle * self.max_angle
+            current_angle = self.smoothing_factor * raw_angle + \
+                            (1 - self.smoothing_factor) * self.previous_angle
+            current_angle = self._clamp(current_angle, -self.max_angle, self.max_angle)
+            self.previous_angle = current_angle
+            return current_angle
+        elif self._assist_active:
+            # ── 状态 B：辅助归中态 ──
             if abs(self.accumulated_x) > self.near_center_threshold:
                 self.accumulated_x *= (1.0 - self.assist_return_rate)
             else:
-                # 到达中心，退出辅助
+                # 进入状态 C：中心检测态
                 self.accumulated_x = 0.0
-                self._assist_active = False
+                self._hold_delta_sum = 0.0
+                self._hold_start_time = time.monotonic()
         else:
             # ── 状态 A：普通态 ──
-            # 用角度来判断是否触发辅助，小角度不触发
-            # 同时检查单位时间内角度变化量：只有大幅快速回打才触发
             rough_angle = self._apply_mapping(self.accumulated_x)
 
             still_reversing = (self._reversal_start_time > 0)
             fast_reversal = self._reversal_sum >= self.assist_rate_threshold
 
-            if fast_reversal and still_reversing:
-                # 触发辅助回中 → 进入辅助
+            # 在触发辅助前检查角度阈值
+            if abs(rough_angle) >= self.assist_threshold and fast_reversal and still_reversing:
                 self._assist_active = True
                 self._assist_from_direction = 1 if delta_x > 0 else -1
                 self.accumulated_x *= (1.0 - self.assist_return_rate)
-                # 进入辅助后清除回打累计
                 self._reversal_sum = 0
                 self._reversal_start_time = 0
             else:
                 self.accumulated_x += delta_x * self.sensitivity
-                # 非回打帧时清除累计
                 if not still_reversing and self._reversal_sum > 0:
                     self._reversal_sum = 0
                     self._reversal_start_time = 0

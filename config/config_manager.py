@@ -1,6 +1,5 @@
 import json
 import os
-import platform
 import copy
 
 DEFAULT_CONFIG = {
@@ -29,7 +28,9 @@ DEFAULT_CONFIG = {
         'assist_return_rate': 0.20,
         'assist_rate_threshold': 50,
         'assist_rate_window': 0.10,
-        'near_center_threshold': 50
+        'near_center_threshold': 50,
+        'center_hold_ms': 100,
+        'center_release_threshold': 200
     },
     'three_zone': {
         'deadzone_start': 0,
@@ -48,8 +49,14 @@ DEFAULT_CONFIG = {
         'start_minimized': False,
         'tray_icon': True,
         'osd_enabled': True,
-        'osd_duration': 2000
-    }
+        'osd_duration': 2000,
+        'sensitivity_presets': [1.0, 2.0, 3.0],
+        'sensitivity_step': 0.1,
+        'wheel_sensitivity_factor': 0.1,
+        'main_loop_interval': 0.005,
+        'hotkey_cooldown_ms': 200
+    },
+    'user_presets': {}
 }
 
 class ConfigManager:

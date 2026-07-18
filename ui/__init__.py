@@ -2,7 +2,8 @@
 
 from .main_window import MainWindow, SteeringWheelCanvas
 from .status_bar import StatusBar
-from .parameter_panel import ParameterPanel, ParameterSlider
+from .parameter_panel import ParameterPanel
+from .widgets.custom_slider import CustomSlider
 from .osd_manager import OSDManager
 
 __all__ = [
@@ -10,6 +11,6 @@ __all__ = [
     'SteeringWheelCanvas',
     'StatusBar',
     'ParameterPanel',
-    'ParameterSlider',
+    'CustomSlider',
     'OSDManager'
 ]

@@ -1,0 +1,41 @@
+vgamepad库未安装，虚拟手柄功能不可用
+虚拟手柄不可用，进入模拟模式; 当前状态: vgamepad库未安装
+加载热键配置...
+热键配置: {'toggle': 'p', 'increase_sensitivity': '=', 'decrease_sensitivity': '-', 'reset_steering': '0', 'sensitivity_preset_1': 'f5', 'sensitivity_preset_2': 'f6', 'sensitivity_preset_3': 'f7', 'cycle_curve': 'f8', 'wheel_adjust': 'control_l'}
+已注册热键 toggle: p -> ([], p, 80)
+注册热键: toggle -> p
+已注册热键 increase_sensitivity: = -> ([], =, 187)
+注册热键: increase_sensitivity -> =
+已注册热键 decrease_sensitivity: - -> ([], minus, 189)
+注册热键: decrease_sensitivity -> -
+已注册热键 reset_steering: 0 -> ([], 0, 48)
+注册热键: reset_steering -> 0
+已注册热键 sensitivity_preset_1: f5 -> ([], f5, 116)
+注册热键: sensitivity_preset_1 -> f5
+已注册热键 sensitivity_preset_2: f6 -> ([], f6, 117)
+注册热键: sensitivity_preset_2 -> f6
+已注册热键 sensitivity_preset_3: f7 -> ([], f7, 118)
+注册热键: sensitivity_preset_3 -> f7
+已注册热键 cycle_curve: f8 -> ([], f8, 119)
+注册热键: cycle_curve -> f8
+滚轮调节键: control_l
+模块句柄: 1109786624
+全局键盘钩子启动失败, 错误码: 126
+使用轮询方式检测按键
+轮询检测到按键: toggle
+热键回调执行失败 toggle: module 'ctypes.wintypes' has no attribute 'ICONINFO'
+轮询检测到按键: toggle
+热键回调执行失败 toggle: module 'ctypes.wintypes' has no attribute 'ICONINFO'
+轮询检测到按键: toggle
+热键回调执行失败 toggle: module 'ctypes.wintypes' has no attribute 'ICONINFO'
+轮询检测到按键: toggle
+热键回调执行失败 toggle: module 'ctypes.wintypes' has no attribute 'ICONINFO'
+轮询检测到按键: toggle
+热键回调执行失败 toggle: module 'ctypes.wintypes' has no attribute 'ICONINFO'
+轮询检测到按键: toggle
+轮询检测到按键: toggle
+热键回调执行失败 toggle: module 'ctypes.wintypes' has no attribute 'ICONINFO'
+轮询检测到按键: toggle
+热键回调执行失败 toggle: module 'ctypes.wintypes' has no attribute 'ICONINFO'
+轮询检测到按键: toggle
+热键回调执行失败 toggle: module 'ctypes.wintypes' has no attribute 'ICONINFO'

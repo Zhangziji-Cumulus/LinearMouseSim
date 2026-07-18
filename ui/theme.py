@@ -1,36 +1,71 @@
 class Theme:
-    SURFACE = "#0a0a14"
-    SURFACE_DIM = "#0f0f1a"
-    SURFACE_BRIGHT = "#2a2a4a"
-    SURFACE_CONTAINER_LOWEST = "#06060d"
-    SURFACE_CONTAINER_LOW = "#121224"
-    SURFACE_CONTAINER = "#16162a"
-    SURFACE_CONTAINER_HIGH = "#1a1a3e"
-    SURFACE_CONTAINER_HIGHEST = "#22224e"
-    ON_SURFACE = "#ffffff"
-    ON_SURFACE_VARIANT = "#8888aa"
-    OUTLINE = "#3a3a6a"
-    OUTLINE_VARIANT = "#2a2a4a"
-    PRIMARY = "#e94560"
-    ON_PRIMARY = "#ffffff"
-    SECONDARY = "#4a90d9"
-    ON_SECONDARY = "#ffffff"
-    TERTIARY = "#00ff88"
-    ON_TERTIARY = "#00331a"
-    ERROR = "#ff4444"
-    WARNING = "#ffaa00"
-    
-    FONT_FAMILY = "Segoe UI"
-    FONT_MONO = "Consolas"
-    
-    ROUNDED_SM = 4
-    ROUNDED_MD = 8
-    ROUNDED_LG = 12
-    ROUNDED_XL = 16
-    
-    SPACING_XS = 4
-    SPACING_SM = 8
-    SPACING_MD = 12
-    SPACING_LG = 16
-    SPACING_XL = 24
-    SPACING_2XL = 32
+    # 浅色背景
+    SURFACE = '#ffffff'
+    SURFACE_DIM = '#f8f9fa'
+    SURFACE_BRIGHT = '#f0f0f0'
+
+    # 卡片
+    GLASS_BG = '#f8f9fa'
+    GLASS_BORDER = '#e0e0e0'
+
+    # 文字
+    ON_SURFACE = '#333333'
+    ON_SURFACE_VARIANT = '#888888'
+    DISABLED = '#bbbbbb'
+
+    # 强调色
+    PRIMARY = '#4caf50'
+    ON_PRIMARY = '#ffffff'
+    SECONDARY = '#2196f3'
+    TERTIARY = '#ff9800'
+    ERROR = '#f44336'
+    WARNING = '#ff9800'
+
+    # 边框
+    OUTLINE = '#e0e0e0'
+    OUTLINE_VARIANT = '#d0d0d0'
+
+    # 字体
+    FONT_FAMILY = 'Segoe UI'
+    FONT_MONO = 'Consolas'
+
+    # 方向盘（深色，对比背景）
+    WHEEL_RING = '#3a3a5a'
+    WHEEL_RING_EDGE = '#5a5a7a'
+    WHEEL_SPOKE = '#5a5a7a'
+    WHEEL_CENTER = '#4caf50'
+    WHEEL_MARKER = '#ff9800'
+
+    # 阴影 / 动画
+    SHADOW_LOW = '#e0e0e0'
+    SHADOW_MID = '#d0d0d0'
+    SHADOW_HIGH = '#c0c0c0'
+
+    ANIMATION_FAST = 100
+    ANIMATION_NORMAL = 200
+
+    # --- Backward-compatible aliases (used by main_window.py) ---
+    SURFACE_CONTAINER_LOWEST = '#ffffff'
+    SURFACE_CONTAINER_LOW = '#f0f0f0'
+    SURFACE_CONTAINER = '#f8f9fa'
+    SURFACE_CONTAINER_HIGH = '#f0f0f0'
+    SURFACE_CONTAINER_HIGHEST = '#e8e8e8'
+
+    GLASS_HIGHLIGHT = '#ffffff'
+
+    ON_SECONDARY = '#ffffff'
+    ON_TERTIARY = '#000000'
+
+    PRIMARY_HOVER = '#66bb6a'
+    PRIMARY_PRESSED = '#43a047'
+
+    WHEEL_OUTER_RING = '#3a3a5a'
+    WHEEL_OUTER_HIGHLIGHT = '#5a5a7a'
+    WHEEL_GRIP = '#4a4a6a'
+    WHEEL_GRIP_LIGHT = '#6a6a8a'
+    WHEEL_GRIP_TEXTURE = '#5a5a7a'
+    WHEEL_SPOKE_EDGE = '#6a6a8a'
+    WHEEL_CENTER_EDGE = '#5a5a7a'
+    WHEEL_BOLT = '#888888'
+    WHEEL_12CLOCK = '#ff9800'
+    WHEEL_12CLOCK_GLOW = '#ffb74d'

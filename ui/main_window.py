@@ -5,6 +5,7 @@ from .theme import Theme
 from .status_bar import StatusBar
 from .parameter_panel import ParameterPanel
 from .tray_manager import TrayManager
+from core.state_machine import SimulationState
 
 class SteeringWheelCanvas(tk.Canvas):
     def __init__(self, parent, **kwargs):
@@ -18,348 +19,237 @@ class SteeringWheelCanvas(tk.Canvas):
         self._deadzone = 0.0
         self._smoothing_factor = 0.3
         self._animation_active = False
-        
+
         self.bind('<Configure>', self._on_resize)
         self._initialized = False
-    
+
     def _on_resize(self, event):
         self._initialized = False
         self._update_wheel()
-    
+
     def _rotate_point(self, x, y, angle_rad):
         cos_a = math.cos(angle_rad)
         sin_a = math.sin(angle_rad)
         return x * cos_a - y * sin_a, x * sin_a + y * cos_a
-    
+
     def _create_wheel_elements(self):
         self.delete('all')
-        
+
         self._center_x = self.winfo_width() // 2
         self._center_y = self.winfo_height() // 2
-        
+
         wheel_radius = self._wheel_radius
-        center_x = self._center_x
-        center_y = self._center_y
-        
-        self.create_oval(
-            center_x - wheel_radius - 12, center_y - wheel_radius - 12,
-            center_x + wheel_radius + 12, center_y + wheel_radius + 12,
-            fill='#000000', outline='', tag='shadow'
-        )
-        
-        self.create_oval(
-            center_x - wheel_radius, center_y - wheel_radius,
-            center_x + wheel_radius, center_y + wheel_radius,
-            fill=Theme.SURFACE_CONTAINER_LOWEST, outline=Theme.OUTLINE, width=2, tag='outer_ring'
-        )
-        
-        grip_radius = wheel_radius * 0.88
-        self.create_oval(
-            center_x - grip_radius, center_y - grip_radius,
-            center_x + grip_radius, center_y + grip_radius,
-            fill=Theme.SURFACE_CONTAINER_HIGHEST, outline=Theme.OUTLINE, width=2, tag='grip_area'
-        )
-        
-        for i in range(3):
-            grip_angle = i * 120
-            start_angle = grip_angle - 18
-            end_angle = grip_angle + 18
-            
-            inner_grip = wheel_radius * 0.62
-            outer_grip = wheel_radius * 0.96
-            
-            x1 = center_x + inner_grip * math.sin(math.radians(start_angle))
-            y1 = center_y - inner_grip * math.cos(math.radians(start_angle))
-            x2 = center_x + inner_grip * math.sin(math.radians(end_angle))
-            y2 = center_y - inner_grip * math.cos(math.radians(end_angle))
-            x3 = center_x + outer_grip * math.sin(math.radians(end_angle))
-            y3 = center_y - outer_grip * math.cos(math.radians(end_angle))
-            x4 = center_x + outer_grip * math.sin(math.radians(start_angle))
-            y4 = center_y - outer_grip * math.cos(math.radians(start_angle))
-            
-            self.create_polygon(
-                x1, y1, x2, y2, x3, y3, x4, y4,
-                fill=Theme.SECONDARY, outline='#3a7bc8', width=1, tag='grip'
+        cx = self._center_x
+        cy = self._center_y
+
+        # 1. Background glow: semi-transparent gradient circles
+        for i in range(5):
+            offset = i * 18
+            r = wheel_radius + 40 - offset
+            alpha_color = ['#e8f5e9', '#c8e6c9', '#a5d6a7', '#81c784', '#66bb6a'][i]
+            self.create_oval(
+                cx - r, cy - r, cx + r, cy + r,
+                fill=alpha_color, outline='', tag='glow'
             )
-        
-        spoke_radius = wheel_radius * 0.45
+
+        # 2. Outer ring: solid circle
+        self.create_oval(
+            cx - wheel_radius, cy - wheel_radius,
+            cx + wheel_radius, cy + wheel_radius,
+            fill=Theme.WHEEL_RING, outline=Theme.WHEEL_RING_EDGE, width=2, tag='outer_ring'
+        )
+
+        # 3. Spokes: 3 thick lines from radius 30 to 140 (rotate with angle)
+        spoke_inner = 30
+        spoke_outer = 140
+        angle_rad = math.radians(self._angle)
         for i in range(3):
-            angle = i * 120
-            rad = math.radians(angle)
-            x1 = center_x + spoke_radius * 0.3 * math.sin(rad)
-            y1 = center_y - spoke_radius * 0.3 * math.cos(rad)
-            x2 = center_x + spoke_radius * math.sin(rad)
-            y2 = center_y - spoke_radius * math.cos(rad)
-            self.create_line(x1, y1, x2, y2, fill=Theme.OUTLINE_VARIANT, width=4, tag='spoke')
-        
-        inner_radius = wheel_radius * 0.52
+            base_angle = i * 120 + self._angle
+            rad = math.radians(base_angle)
+            x1 = cx + spoke_inner * math.sin(rad)
+            y1 = cy - spoke_inner * math.cos(rad)
+            x2 = cx + spoke_outer * math.sin(rad)
+            y2 = cy - spoke_outer * math.cos(rad)
+            self.create_line(x1, y1, x2, y2,
+                             fill=Theme.WHEEL_SPOKE, width=8,
+                             capstyle='round', tag='spoke')
+
+        # 4. Center: 20px circle (static)
+        center_r = 20
         self.create_oval(
-            center_x - inner_radius, center_y - inner_radius,
-            center_x + inner_radius, center_y + inner_radius,
-            fill=Theme.SURFACE_CONTAINER_LOW, outline=Theme.OUTLINE_VARIANT, width=1, tag='inner_ring'
+            cx - center_r, cy - center_r,
+            cx + center_r, cy + center_r,
+            fill=Theme.WHEEL_CENTER, outline='', tag='center_plate'
         )
-        
-        center_radius = wheel_radius * 0.16
-        self.create_oval(
-            center_x - center_radius, center_y - center_radius,
-            center_x + center_radius, center_y + center_radius,
-            fill=Theme.PRIMARY, outline=Theme.ON_PRIMARY, width=2, tag='center_cap'
-        )
-        
-        self.create_text(center_x, center_y, text='LMS', fill=Theme.ON_PRIMARY,
-                        font=(Theme.FONT_FAMILY, 12, 'bold'), tag='center_text')
-        
-        line_length = wheel_radius * 1.2
-        self.create_line(
-            center_x - line_length, center_y,
-            center_x + line_length, center_y,
-            fill=Theme.OUTLINE_VARIANT, width=1, dash=(6, 4), tag='indicator_line'
-        )
-        
-        self.create_line(
-            center_x, center_y - line_length * 0.35,
-            center_x, center_y + line_length * 0.35,
-            fill=Theme.OUTLINE_VARIANT, width=1, dash=(6, 4), tag='indicator_line_vertical'
-        )
-        
-        self.create_text(
-            center_x, center_y + wheel_radius + 45,
-            text='0.0°', fill=Theme.ON_SURFACE, font=(Theme.FONT_MONO, 28, 'bold'),
-            tag='angle_text'
-        )
-        
-        self.create_text(
-            center_x, center_y + wheel_radius + 72,
-            text='CENTER', fill=Theme.ON_SURFACE_VARIANT, font=(Theme.FONT_FAMILY, 11),
-            tag='rotation_text'
-        )
-        
-        left_arrow_x = center_x - wheel_radius - 75
-        right_arrow_x = center_x + wheel_radius + 75
-        
-        self.create_polygon(
-            left_arrow_x + 24, center_y - 20,
-            left_arrow_x, center_y,
-            left_arrow_x + 24, center_y + 20,
-            fill=Theme.OUTLINE_VARIANT, outline='', tag='left_arrow'
-        )
-        self.create_text(left_arrow_x + 45, center_y, text='LEFT', fill=Theme.ON_SURFACE_VARIANT,
-                        font=(Theme.FONT_FAMILY, 11, 'bold'), tag='left_label')
-        
-        self.create_polygon(
-            right_arrow_x - 24, center_y - 20,
-            right_arrow_x, center_y,
-            right_arrow_x - 24, center_y + 20,
-            fill=Theme.OUTLINE_VARIANT, outline='', tag='right_arrow'
-        )
-        self.create_text(right_arrow_x - 45, center_y, text='RIGHT', fill=Theme.ON_SURFACE_VARIANT,
-                        font=(Theme.FONT_FAMILY, 11, 'bold'), tag='right_label')
-        
-        for angle in [-90, -60, -30, 30, 60, 90]:
-            tick_radius = wheel_radius + 18
-            tick_length = 14 if abs(angle) % 30 == 0 else 7
-            
-            rad = math.radians(angle)
-            x1 = center_x + (tick_radius - tick_length) * math.sin(rad)
-            y1 = center_y - (tick_radius - tick_length) * math.cos(rad)
-            x2 = center_x + tick_radius * math.sin(rad)
-            y2 = center_y - tick_radius * math.cos(rad)
-            
-            tick_color = Theme.TERTIARY if abs(angle) <= self._max_angle else Theme.OUTLINE_VARIANT
-            self.create_line(x1, y1, x2, y2, fill=tick_color, width=2 if abs(angle) % 30 == 0 else 1,
-                           tag='tick')
-            
-            label_radius = wheel_radius + 38
-            lx = center_x + label_radius * math.sin(rad)
-            ly = center_y - label_radius * math.cos(rad)
-            
-            label_color = Theme.ON_SURFACE if abs(angle) <= self._max_angle else Theme.ON_SURFACE_VARIANT
-            self.create_text(lx, ly, text=f'{angle}°', fill=label_color,
-                           font=(Theme.FONT_MONO, 10, 'bold'), tag='tick_label')
-        
-        deadzone_radius = wheel_radius * 0.25
-        self.create_oval(
-            center_x - deadzone_radius, center_y - deadzone_radius,
-            center_x + deadzone_radius, center_y + deadzone_radius,
-            fill=Theme.SURFACE_CONTAINER_LOW, outline=Theme.OUTLINE_VARIANT, width=1,
-            tag='deadzone_indicator'
-        )
-        
-        self.create_text(
-            center_x, center_y + deadzone_radius + 20,
-            text='DEADZONE', fill=Theme.WARNING, font=(Theme.FONT_FAMILY, 8, 'bold'),
-            tag='deadzone_label'
-        )
-        
+
+        # 5. 12 o'clock marker: vertical bar, 20x3px (rotates)
+        marker_h = 20
+        marker_w = 3
+        marker_cx = cx
+        marker_cy = cy - wheel_radius
+        cos_a = math.cos(angle_rad)
+        sin_a = math.sin(angle_rad)
+        # Rectangle vertices relative to marker center, then rotated around wheel center
+        rect_pts = [
+            (-marker_w / 2, -marker_h / 2),
+            (marker_w / 2, -marker_h / 2),
+            (marker_w / 2, marker_h / 2),
+            (-marker_w / 2, marker_h / 2),
+        ]
+        rotated = []
+        for px, py in rect_pts:
+            rx = px * cos_a - py * sin_a + marker_cx
+            ry = px * sin_a + py * cos_a + marker_cy
+            rotated.extend([rx, ry])
+        self.create_polygon(rotated, fill=Theme.WHEEL_MARKER, outline='', tag='12clock')
+
+        # 6. Scale dial: tick marks, thicker and longer
+        for angle_deg in range(-180, 181, 30):
+            if angle_deg == 0:
+                continue
+            tick_outer_r = wheel_radius + 22
+            tick_len = 18 if abs(angle_deg) % 60 == 0 else 12
+            tick_inner_r = tick_outer_r - tick_len
+            rad = math.radians(angle_deg)
+            x1 = cx + tick_inner_r * math.sin(rad)
+            y1 = cy - tick_inner_r * math.cos(rad)
+            x2 = cx + tick_outer_r * math.sin(rad)
+            y2 = cy - tick_outer_r * math.cos(rad)
+            tick_width = 4 if abs(angle_deg) % 60 == 0 else 3
+            self.create_line(x1, y1, x2, y2, fill='#000000', width=tick_width, tag='tick')
+
+        # 7. Angle display: large number + direction text
+        self.create_text(cx, cy + wheel_radius + 48,
+                         text='0.0°', fill=Theme.ON_SURFACE,
+                         font=(Theme.FONT_MONO, 28, 'bold'), tag='angle_text')
+        self.create_text(cx, cy + wheel_radius + 74,
+                         text='CENTER', fill=Theme.ON_SURFACE_VARIANT,
+                         font=(Theme.FONT_FAMILY, 11), tag='rotation_text')
+
         self._initialized = True
-    
+
     def _update_wheel(self):
         if not self._initialized:
             self._create_wheel_elements()
             return
-        
+
         self.delete('all')
-        
-        center_x = self._center_x
-        center_y = self._center_y
+
+        cx = self._center_x
+        cy = self._center_y
         wheel_radius = self._wheel_radius
-        
-        angle_rad = math.radians(self._angle)
-        
-        self.create_oval(
-            center_x - wheel_radius - 12, center_y - wheel_radius - 12,
-            center_x + wheel_radius + 12, center_y + wheel_radius + 12,
-            fill='#000000', outline='', tag='shadow'
-        )
-        
-        self.create_oval(
-            center_x - wheel_radius, center_y - wheel_radius,
-            center_x + wheel_radius, center_y + wheel_radius,
-            fill=Theme.SURFACE_CONTAINER_LOWEST, outline=Theme.OUTLINE, width=2, tag='outer_ring'
-        )
-        
-        grip_radius = wheel_radius * 0.88
-        self.create_oval(
-            center_x - grip_radius, center_y - grip_radius,
-            center_x + grip_radius, center_y + grip_radius,
-            fill=Theme.SURFACE_CONTAINER_HIGHEST, outline=Theme.OUTLINE, width=2, tag='grip_area'
-        )
-        
-        for i in range(3):
-            grip_angle = i * 120 + self._angle
-            start_angle = grip_angle - 18
-            end_angle = grip_angle + 18
-            
-            inner_grip = wheel_radius * 0.62
-            outer_grip = wheel_radius * 0.96
-            
-            x1 = center_x + inner_grip * math.sin(math.radians(start_angle))
-            y1 = center_y - inner_grip * math.cos(math.radians(start_angle))
-            x2 = center_x + inner_grip * math.sin(math.radians(end_angle))
-            y2 = center_y - inner_grip * math.cos(math.radians(end_angle))
-            x3 = center_x + outer_grip * math.sin(math.radians(end_angle))
-            y3 = center_y - outer_grip * math.cos(math.radians(end_angle))
-            x4 = center_x + outer_grip * math.sin(math.radians(start_angle))
-            y4 = center_y - outer_grip * math.cos(math.radians(start_angle))
-            
-            self.create_polygon(
-                x1, y1, x2, y2, x3, y3, x4, y4,
-                fill=Theme.SECONDARY, outline='#3a7bc8', width=1, tag='grip'
+        angle = self._angle
+        angle_rad = math.radians(angle)
+
+        # 1. Background glow
+        for i in range(5):
+            offset = i * 18
+            r = wheel_radius + 40 - offset
+            alpha_color = ['#e8f5e9', '#c8e6c9', '#a5d6a7', '#81c784', '#66bb6a'][i]
+            self.create_oval(
+                cx - r, cy - r, cx + r, cy + r,
+                fill=alpha_color, outline='', tag='glow'
             )
-        
-        spoke_radius = wheel_radius * 0.45
+
+        # 2. Outer ring (static)
+        self.create_oval(
+            cx - wheel_radius, cy - wheel_radius,
+            cx + wheel_radius, cy + wheel_radius,
+            fill=Theme.WHEEL_RING, outline=Theme.WHEEL_RING_EDGE, width=2, tag='outer_ring'
+        )
+
+        # 3. Spokes: 3 thick lines (rotate)
+        spoke_inner = 30
+        spoke_outer = 140
         for i in range(3):
-            angle = i * 120 + self._angle
-            rad = math.radians(angle)
-            x1 = center_x + spoke_radius * 0.3 * math.sin(rad)
-            y1 = center_y - spoke_radius * 0.3 * math.cos(rad)
-            x2 = center_x + spoke_radius * math.sin(rad)
-            y2 = center_y - spoke_radius * math.cos(rad)
-            self.create_line(x1, y1, x2, y2, fill=Theme.OUTLINE_VARIANT, width=4, tag='spoke')
-        
-        inner_radius = wheel_radius * 0.52
+            base_angle = i * 120 + angle
+            rad = math.radians(base_angle)
+            x1 = cx + spoke_inner * math.sin(rad)
+            y1 = cy - spoke_inner * math.cos(rad)
+            x2 = cx + spoke_outer * math.sin(rad)
+            y2 = cy - spoke_outer * math.cos(rad)
+            self.create_line(x1, y1, x2, y2,
+                             fill=Theme.WHEEL_SPOKE, width=8,
+                             capstyle='round', tag='spoke')
+
+        # 4. Center (static)
+        center_r = 20
         self.create_oval(
-            center_x - inner_radius, center_y - inner_radius,
-            center_x + inner_radius, center_y + inner_radius,
-            fill=Theme.SURFACE_CONTAINER_LOW, outline=Theme.OUTLINE_VARIANT, width=1, tag='inner_ring'
+            cx - center_r, cy - center_r,
+            cx + center_r, cy + center_r,
+            fill=Theme.WHEEL_CENTER, outline='', tag='center_plate'
         )
-        
-        center_radius = wheel_radius * 0.16
-        self.create_oval(
-            center_x - center_radius, center_y - center_radius,
-            center_x + center_radius, center_y + center_radius,
-            fill=Theme.PRIMARY, outline=Theme.ON_PRIMARY, width=2, tag='center_cap'
-        )
-        
-        deadzone_radius = wheel_radius * (0.15 + self._deadzone / 50)
-        is_in_deadzone = abs(self._angle) < (self._max_angle * self._deadzone / 100)
-        deadzone_color = Theme.WARNING if is_in_deadzone else Theme.SURFACE_CONTAINER_LOW
-        deadzone_outline = Theme.WARNING if is_in_deadzone else Theme.OUTLINE_VARIANT
-        
-        self.create_oval(
-            center_x - deadzone_radius, center_y - deadzone_radius,
-            center_x + deadzone_radius, center_y + deadzone_radius,
-            fill=deadzone_color, outline=deadzone_outline, width=2, tag='deadzone_indicator'
-        )
-        
-        for i in range(-self._max_angle, self._max_angle + 1, 30):
-            if i == 0:
+
+        # 5. 12 o'clock marker (rotates)
+        marker_h = 20
+        marker_w = 3
+        marker_cx = cx
+        marker_cy = cy - wheel_radius
+        cos_a = math.cos(angle_rad)
+        sin_a = math.sin(angle_rad)
+        rect_pts = [
+            (-marker_w / 2, -marker_h / 2),
+            (marker_w / 2, -marker_h / 2),
+            (marker_w / 2, marker_h / 2),
+            (-marker_w / 2, marker_h / 2),
+        ]
+        rotated = []
+        for px, py in rect_pts:
+            rx = px * cos_a - py * sin_a + marker_cx
+            ry = px * sin_a + py * cos_a + marker_cy
+            rotated.extend([rx, ry])
+        self.create_polygon(rotated, fill=Theme.WHEEL_MARKER, outline='', tag='12clock')
+
+        # 6. Scale dial: tick marks, thicker and longer
+        for angle_deg in range(-180, 181, 30):
+            if angle_deg == 0:
                 continue
-            
-            tick_radius_inner = wheel_radius * 0.55
-            tick_radius_outer = wheel_radius * 0.59
-            
-            angle_deg = i + self._angle
+            tick_outer_r = wheel_radius + 22
+            tick_len = 18 if abs(angle_deg) % 60 == 0 else 12
+            tick_inner_r = tick_outer_r - tick_len
             rad = math.radians(angle_deg)
-            
-            x1 = center_x + tick_radius_inner * math.sin(rad)
-            y1 = center_y - tick_radius_inner * math.cos(rad)
-            x2 = center_x + tick_radius_outer * math.sin(rad)
-            y2 = center_y - tick_radius_outer * math.cos(rad)
-            
-            color = Theme.TERTIARY if i % 60 == 0 else Theme.OUTLINE_VARIANT
-            self.create_line(x1, y1, x2, y2, fill=color, width=2 if i % 60 == 0 else 1, tag='tick')
-            
-            if i % 30 == 0:
-                label_radius = wheel_radius * 0.48
-                label_x = center_x + label_radius * math.sin(rad)
-                label_y = center_y - label_radius * math.cos(rad)
-                
-                label_text = f'{i}°'
-                font_color = Theme.TERTIARY if i % 60 == 0 else Theme.ON_SURFACE_VARIANT
-                self.create_text(label_x, label_y, text=label_text, fill=font_color,
-                                font=(Theme.FONT_MONO, 8), tag='angle_label')
-        
-        center_line_length = wheel_radius * 0.35
-        self.create_line(
-            center_x, center_y - center_line_length,
-            center_x, center_y + center_line_length,
-            fill=Theme.PRIMARY, width=3, tag='center_line'
-        )
-        self.create_line(
-            center_x - center_line_length, center_y,
-            center_x + center_line_length, center_y,
-            fill=Theme.PRIMARY, width=3, tag='center_line'
-        )
-        
-        self.create_text(center_x, center_y, text='LM', fill=Theme.ON_PRIMARY,
-                        font=(Theme.FONT_FAMILY, 12, 'bold'), tag='center_text')
-        
-        self.create_text(center_x, center_y + wheel_radius + 30,
-                        text=f'{self._angle:.1f}°', fill=Theme.ON_SURFACE,
-                        font=(Theme.FONT_MONO, 24, 'bold'), tag='angle_text')
-        
-        if self._angle > 0.5:
-            rotation_text = 'RIGHT'
-        elif self._angle < -0.5:
-            rotation_text = 'LEFT'
-        else:
-            rotation_text = 'CENTER'
-        
-        self.create_text(center_x, center_y + wheel_radius + 55,
-                        text=rotation_text, fill=Theme.SECONDARY,
-                        font=(Theme.FONT_FAMILY, 10), tag='rotation_text')
-        
+            x1 = cx + tick_inner_r * math.sin(rad)
+            y1 = cy - tick_inner_r * math.cos(rad)
+            x2 = cx + tick_outer_r * math.sin(rad)
+            y2 = cy - tick_outer_r * math.cos(rad)
+            tick_width = 4 if abs(angle_deg) % 60 == 0 else 3
+            self.create_line(x1, y1, x2, y2, fill='#000000', width=tick_width, tag='tick')
+
+        # 7. Direction arrows (static, color changes)
         arrow_size = 12
-        left_arrow_x = center_x - wheel_radius - 25
-        right_arrow_x = center_x + wheel_radius + 25
-        
-        left_color = Theme.TERTIARY if self._angle < -0.5 else Theme.OUTLINE_VARIANT
-        right_color = Theme.TERTIARY if self._angle > 0.5 else Theme.OUTLINE_VARIANT
-        
+        left_ax = cx - wheel_radius - 40
+        right_ax = cx + wheel_radius + 40
+        left_color = Theme.TERTIARY if angle < -0.5 else Theme.OUTLINE
+        right_color = Theme.TERTIARY if angle > 0.5 else Theme.OUTLINE
         self.create_polygon(
-            left_arrow_x + arrow_size, center_y - arrow_size,
-            left_arrow_x, center_y,
-            left_arrow_x + arrow_size, center_y + arrow_size,
-            fill=left_color, outline=left_color, tag='left_arrow'
+            left_ax + arrow_size, cy - arrow_size,
+            left_ax, cy,
+            left_ax + arrow_size, cy + arrow_size,
+            fill=left_color, outline='', tag='left_arrow'
         )
-        
         self.create_polygon(
-            right_arrow_x - arrow_size, center_y - arrow_size,
-            right_arrow_x, center_y,
-            right_arrow_x - arrow_size, center_y + arrow_size,
-            fill=right_color, outline=right_color, tag='right_arrow'
+            right_ax - arrow_size, cy - arrow_size,
+            right_ax, cy,
+            right_ax - arrow_size, cy + arrow_size,
+            fill=right_color, outline='', tag='right_arrow'
         )
+
+        # 8. Angle display
+        self.create_text(cx, cy + wheel_radius + 48,
+                         text=f'{angle:.1f}°', fill=Theme.ON_SURFACE,
+                         font=(Theme.FONT_MONO, 28, 'bold'), tag='angle_text')
+        if angle > 0.5:
+            rot_text = 'RIGHT'
+            rot_color = Theme.TERTIARY
+        elif angle < -0.5:
+            rot_text = 'LEFT'
+            rot_color = Theme.TERTIARY
+        else:
+            rot_text = 'CENTER'
+            rot_color = Theme.ON_SURFACE_VARIANT
+        self.create_text(cx, cy + wheel_radius + 74,
+                         text=rot_text, fill=rot_color,
+                         font=(Theme.FONT_FAMILY, 11), tag='rotation_text')
 
     
     def _animate(self):
@@ -403,12 +293,13 @@ class SteeringWheelCanvas(tk.Canvas):
         self._smoothing_factor = factor
 
 class MainWindow(tk.Tk):
-    def __init__(self, app=None):
+    def __init__(self, app=None, presets=None):
         super().__init__()
         self.app = app
+        self.presets = presets or {}
         self.title("LinearMouseSim")
-        self.geometry("900x650")
-        self.minsize(700, 500)
+        self.geometry("1200x750")
+        self.minsize(900, 600)
         
         self.configure(bg=Theme.SURFACE)
         
@@ -463,7 +354,7 @@ class MainWindow(tk.Tk):
                        sliderrelief='flat')
         
         style.map('Primary.TButton',
-                 background=[('active', '#ff6b85')])
+                 background=[('active', Theme.PRIMARY_HOVER)])
         
         style.map('Secondary.TButton',
                  background=[('active', Theme.SURFACE_CONTAINER_HIGHEST)])
@@ -472,19 +363,22 @@ class MainWindow(tk.Tk):
         main_frame = ttk.Frame(self, style='Panel.TFrame', padding=0)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        left_panel = ttk.Frame(main_frame, style='Panel.TFrame', width=320)
+        # Left panel - parameter settings (fixed width)
+        left_panel = ttk.Frame(main_frame, style='Panel.TFrame', width=360)
         left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8), pady=8)
         left_panel.pack_propagate(False)
         
+        self.param_panel = ParameterPanel(left_panel, self, presets=self.presets)
+        self.param_panel.pack(fill=tk.BOTH, expand=True)
+        
+        # Right panel - steering wheel
         wheel_frame = ttk.Frame(main_frame, style='Panel.TFrame')
         wheel_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=8)
         
-        self.wheel_canvas = SteeringWheelCanvas(wheel_frame, bg=Theme.SURFACE_CONTAINER_LOW)
-        self.wheel_canvas.pack(fill=tk.BOTH, expand=True, padx=8)
+        self.wheel_canvas = SteeringWheelCanvas(wheel_frame, bg=Theme.SURFACE)
+        self.wheel_canvas.pack(fill=tk.BOTH, expand=True)
         
-        self.param_panel = ParameterPanel(left_panel, self)
-        self.param_panel.pack(fill=tk.BOTH, expand=True)
-        
+        # Status bar at bottom
         self.status_bar = StatusBar(self)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
     
@@ -506,7 +400,7 @@ class MainWindow(tk.Tk):
         self.status_bar.set_vjoy_status(available, status_text)
     
     def update_status(self, state):
-        is_active = state == 'ON'
+        is_active = state == SimulationState.ON
         self.status_bar.set_active(is_active)
     
     def update_parameter_display(self):

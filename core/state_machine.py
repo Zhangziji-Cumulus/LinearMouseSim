@@ -1,11 +1,18 @@
 import time
 import threading
+from enum import Enum
 from .mouse_capture import get_mouse_position, set_mouse_position, get_screen_center, ClipCursorManager, release_cursor_safety
+
+
+class SimulationState(Enum):
+    ON = 'ON'
+    OFF = 'OFF'
+
 
 class SteeringStateMachine:
     def __init__(self, vjoy_output):
         self.vjoy_output = vjoy_output
-        self.state = 'OFF'
+        self.state = SimulationState.OFF
         self.base_x = 0
         self.base_y = 0
         self.current_angle = 0.0
@@ -42,7 +49,7 @@ class SteeringStateMachine:
             with self.state_lock:
                 current_state = self.state
             
-            if current_state == 'ON' and not self._turning_off:
+            if current_state == SimulationState.ON and not self._turning_off:
                 mouse_x, _ = get_mouse_position()
                 delta = mouse_x - self.last_mouse_x
                 if abs(delta) > 0:
@@ -54,11 +61,11 @@ class SteeringStateMachine:
     
     def turn_on(self):
         with self.state_lock:
-            if self.state == 'ON':
+            if self.state == SimulationState.ON:
                 return
-            
+
             self.original_cursor_x, self.original_cursor_y = get_mouse_position()
-            
+
             self.base_x = self.center_x
             self.base_y = self.center_y
             self.last_mouse_x = self.center_x
@@ -66,19 +73,19 @@ class SteeringStateMachine:
             self.mouse_moved = False
             self.mouse_delta_x = 0
             self._turning_off = False
-            
+
             set_mouse_position(self.center_x, self.center_y)
-            
-            self.state = 'ON'
+
+            self.state = SimulationState.ON
             self.vjoy_output.set_steering_angle(0)
             print("模拟已开启")
     
     def turn_off(self):
         with self.state_lock:
-            if self.state == 'OFF':
+            if self.state == SimulationState.OFF:
                 return
-            
-            self.state = 'OFF'
+
+            self.state = SimulationState.OFF
             self._turning_off = True
         
         self.cursor_manager.unlock()
@@ -95,7 +102,7 @@ class SteeringStateMachine:
         print("模拟已关闭")
     
     def toggle(self):
-        if self.state == 'OFF':
+        if self.state == SimulationState.OFF:
             self.turn_on()
         else:
             self.turn_off()

@@ -85,7 +85,7 @@ class OSDManager:
         self._show_text(text)
     
     def show_toggle_state(self, state):
-        if state == 'ON':
+        if state.value == 'ON':
             text = '模拟已开启'
         else:
             text = '模拟已关闭'
@@ -100,7 +100,7 @@ class OSDManager:
             if self._timer is not None:
                 try:
                     self._window.after_cancel(self._timer)
-                except:
+                except Exception:
                     pass
                 self._timer = None
             if self._window is not None:

@@ -5,8 +5,6 @@ ViGEmBus 虚拟手柄输出模块（基于 vgamepad）
 使游戏原生识别为手柄操作，无需额外配置。
 """
 
-import time
-
 try:
     import vgamepad as vg
     VGAMEPAD_AVAILABLE = True

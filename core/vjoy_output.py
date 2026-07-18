@@ -1,5 +1,4 @@
 import time
-import ctypes
 
 try:
     import pyvjoy
