@@ -16,21 +16,26 @@ DEFAULT_CONFIG = {
         'temp_sensitivity_half': 'shift'
     },
     'steering': {
-        'sensitivity': 1.0,
-        'smoothing_factor': 0.3,
-        'deadzone': 3,
-        'max_angle': 90,
+        'sensitivity': 0.2,
+        'smoothing_factor': 0.25,
+        'deadzone': 0,
+        'max_angle': 180,
         'return_speed': 0.0,
         'curve_type': 'linear',
-        'exponential_power': 1.5,
+        'exponential_power': 1.8,
         'reverse_direction': False,
-        'assist_threshold': 300,
-        'assist_return_rate': 0.20,
+        'assist_threshold': 30,
+        'assist_return_rate': 0.15,
         'assist_rate_threshold': 50,
-        'assist_rate_window': 0.10,
+        'assist_rate_window': 0.02,
         'near_center_threshold': 50,
         'center_hold_ms': 100,
-        'center_release_threshold': 200
+        'center_release_threshold': 200,
+        'center_mode': 1,
+        'center_speed_mode': 0,
+        'center_speed': 0.05,
+        'center_delay_ms': 200,
+        'center_enabled': False
     },
     'three_zone': {
         'deadzone_start': 0,
@@ -90,6 +95,10 @@ class ConfigManager:
                     result[key] = self._merge_config(result[key], loaded[key])
                 else:
                     result[key] = loaded[key]
+        # 添加 loaded 中有但 default 中没有的键
+        for key in loaded:
+            if key not in result:
+                result[key] = loaded[key]
         return result
     
     def _save_config(self, config):

@@ -212,10 +212,12 @@ class LinearMouseSim:
         for key, value in params.items():
             if key == 'dpi':
                 self.config.set(f'mouse.{key}', value)
-            elif key in ('deadzone', 'max_angle', 'smoothing_factor', 'return_speed', 
+            elif key in ('deadzone', 'max_angle', 'smoothing_factor', 'return_speed',
                          'sensitivity', 'reverse_direction', 'exponential_power',
                          'assist_rate_threshold', 'assist_rate_window',
-                         'assist_threshold', 'assist_return_rate', 'near_center_threshold'):
+                         'assist_threshold', 'assist_return_rate', 'near_center_threshold',
+                         'center_hold_ms', 'center_release_threshold',
+                         'center_enabled', 'center_mode', 'center_speed_mode', 'center_speed', 'center_delay_ms'):
                 self.config.set(f'steering.{key}', value)
             elif key == 'linear_end':
                 self.config.set('three_zone.linear_end', value)

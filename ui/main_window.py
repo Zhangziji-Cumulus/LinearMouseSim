@@ -422,6 +422,7 @@ class MainWindow(tk.Tk):
                 'assist_threshold': self.app.config.get('steering.assist_threshold', 300),
                 'assist_return_rate': self.app.config.get('steering.assist_return_rate', 0.20),
                 'near_center_threshold': self.app.config.get('steering.near_center_threshold', 50),
+                'center_enabled': self.app.config.get('steering.center_enabled', True),
             }
             self.param_panel.set_parameters(params)
     
