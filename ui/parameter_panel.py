@@ -21,6 +21,7 @@ class ParameterPanel(tk.Frame):
     TABS = [
         ('basic',    '基础设置'),
         ('assist',   '辅助回中'),
+        ('center',   '方向盘回中'),
         ('mapping',  '映射参数'),
         ('hotkey',   '快捷键'),
     ]
@@ -58,35 +59,30 @@ class ParameterPanel(tk.Frame):
         # Preset selector (always visible above tabs)
         self._build_preset_bar()
 
-        # Tab bar with horizontal scroll
+        # Tab bar with auto-wrap using grid layout
         tab_container = tk.Frame(self, bg=self.TAB_BAR_BG)
         tab_container.pack(fill=tk.X, padx=12, pady=(8, 0))
-        
-        self._tab_canvas = tk.Canvas(tab_container, bg=self.TAB_BAR_BG, highlightthickness=0, height=32)
-        self._tab_canvas.pack(fill=tk.X)
-        
-        self._tab_bar = tk.Frame(self._tab_canvas, bg=self.TAB_BAR_BG)
-        self._tab_canvas_window = self._tab_canvas.create_window((0, 0), window=self._tab_bar, anchor='nw')
-        
-        for key, label in self.TABS:
+
+        self._tab_bar = tk.Frame(tab_container, bg=self.TAB_BAR_BG)
+        self._tab_bar.pack(fill=tk.X)
+
+        # 使用 grid 布局实现自动换行
+        self._tab_buttons = {}
+        max_cols = 4  # 每行最多显示4个标签
+        for idx, (key, label) in enumerate(self.TABS):
+            row = idx // max_cols
+            col = idx % max_cols
             btn = tk.Label(
                 self._tab_bar, text=label, bd=0, padx=14, pady=6,
                 font=(Theme.FONT_FAMILY, 9, 'bold'),
                 cursor='hand2'
             )
-            btn.pack(side=tk.LEFT, padx=(0, 2))
+            btn.grid(row=row, column=col, padx=(0, 2), pady=2, sticky='w')
             btn.bind('<Button-1>', lambda e, k=key: self._switch_tab(k))
             self._tab_buttons[key] = btn
-        
-        # Bind horizontal scroll
-        self._tab_bar.bind('<Configure>', lambda e: self._tab_canvas.configure(scrollregion=self._tab_canvas.bbox('all')))
-        self._tab_canvas.bind('<MouseWheel>', self._on_tab_scroll)
-        
+
         # Build content area (must be after tab bar)
         self._build_content_area()
-    
-    def _on_tab_scroll(self, event):
-        self._tab_canvas.xview_scroll(int(-1 * (event.delta / 120)), 'units')
 
     def _build_content_area(self):
         # Separator below tab bar
@@ -99,6 +95,7 @@ class ParameterPanel(tk.Frame):
         # Build each tab's content inside the content frame
         self._build_basic_tab()
         self._build_assist_tab()
+        self._build_center_tab()
         self._build_mapping_tab()
         self._build_hotkey_tab()
 
@@ -421,6 +418,75 @@ class ParameterPanel(tk.Frame):
             s.pack(fill=tk.X)
             self._sliders[key] = s
 
+    # ---- Tab: 方向盘回中 ----
+
+    def _build_center_tab(self):
+        frame = tk.Frame(self._content_frame, bg=Theme.SURFACE)
+        self._tab_frames['center'] = frame
+        self._build_card(frame, '方向盘回中', self._build_center_card)
+
+    def _build_center_card(self, parent):
+        # 启用回中开关
+        enable_frame = tk.Frame(parent, bg=self.CARD_BG)
+        enable_frame.pack(fill=tk.X, padx=8, pady=(8, 4))
+        tk.Label(enable_frame, text='启用方向盘回中', fg=Theme.ON_SURFACE, bg=self.CARD_BG,
+                 font=(Theme.FONT_FAMILY, 9)).pack(side=tk.LEFT)
+        self._center_enabled_var = tk.BooleanVar(value=True)
+        enable_switch = tk.Checkbutton(enable_frame, variable=self._center_enabled_var,
+                                        bg=self.CARD_BG, activebackground=self.CARD_BG,
+                                        command=self._on_center_enabled_change)
+        enable_switch.pack(side=tk.RIGHT)
+
+        # 回中模式选择
+        mode_frame = tk.Frame(parent, bg=self.CARD_BG)
+        mode_frame.pack(fill=tk.X, padx=8, pady=4)
+        tk.Label(mode_frame, text='回中模式', fg=Theme.ON_SURFACE, bg=self.CARD_BG,
+                 font=(Theme.FONT_FAMILY, 9)).pack(side=tk.LEFT)
+        self._center_mode_var = tk.StringVar(value='立即')
+        mode_options = ['延迟', '立即', '持续']
+        mode_combo = ttk.Combobox(mode_frame, textvariable=self._center_mode_var,
+                                   values=mode_options, state='readonly', width=8)
+        mode_combo.pack(side=tk.RIGHT)
+        mode_combo.bind('<<ComboboxSelected>>', self._on_center_mode_change)
+
+        # 回中速度模式选择
+        speed_mode_frame = tk.Frame(parent, bg=self.CARD_BG)
+        speed_mode_frame.pack(fill=tk.X, padx=8, pady=4)
+        tk.Label(speed_mode_frame, text='速度模式', fg=Theme.ON_SURFACE, bg=self.CARD_BG,
+                 font=(Theme.FONT_FAMILY, 9)).pack(side=tk.LEFT)
+        self._center_speed_mode_var = tk.StringVar(value='固定')
+        speed_mode_options = ['固定', '动态']
+        speed_mode_combo = ttk.Combobox(speed_mode_frame, textvariable=self._center_speed_mode_var,
+                                         values=speed_mode_options, state='readonly', width=8)
+        speed_mode_combo.pack(side=tk.RIGHT)
+        speed_mode_combo.bind('<<ComboboxSelected>>', self._on_center_speed_mode_change)
+
+        # 回中速度滑块
+        s = CustomSlider(parent, '回中速度', 1, 50, 5, resolution=1, unit='%',
+                         callback=self._on_parameter_change)
+        s.pack(fill=tk.X)
+        self._sliders['center_speed'] = s
+
+        # 回中延迟滑块
+        s = CustomSlider(parent, '回中延迟', 0, 1000, 200, resolution=10, unit='ms',
+                         callback=self._on_parameter_change)
+        s.pack(fill=tk.X)
+        self._sliders['center_delay_ms'] = s
+
+    def _on_center_enabled_change(self):
+        enabled = self._center_enabled_var.get()
+        self._on_parameter_change({'center_enabled': enabled})
+
+    def _on_center_mode_change(self, event=None):
+        mode_map = {'延迟': 0, '立即': 1, '持续': 2}
+        mode = mode_map.get(self._center_mode_var.get(), 1)
+        self._on_parameter_change({'center_mode': mode})
+
+    def _on_center_speed_mode_change(self, event=None):
+        speed_mode_map = {'固定': 0, '动态': 1}
+        speed_mode = speed_mode_map.get(self._center_speed_mode_var.get(), 0)
+        self._on_parameter_change({'center_speed_mode': speed_mode})
+
     # ---- Tab: 映射参数 ----
 
     def _build_mapping_tab(self):
@@ -594,7 +660,7 @@ class ParameterPanel(tk.Frame):
         self._on_change_callback = callback
 
     def get_parameters(self):
-        return {
+        params = {
             'sensitivity':           self._sliders['sensitivity'].get_value(),
             'smoothing_factor':      self._sliders['smoothing_factor'].get_value(),
             'deadzone':              self._sliders['deadzone'].get_value(),
@@ -612,6 +678,14 @@ class ParameterPanel(tk.Frame):
             'center_hold_ms': self._sliders['center_hold_ms'].get_value(),
             'center_release_threshold': self._sliders['center_release_threshold'].get_value(),
         }
+        # 添加方向盘回中参数
+        if hasattr(self, '_center_enabled_var'):
+            params['center_enabled'] = self._center_enabled_var.get()
+        if 'center_speed' in self._sliders:
+            params['center_speed'] = self._sliders['center_speed'].get_value() / 100.0
+        if 'center_delay_ms' in self._sliders:
+            params['center_delay_ms'] = self._sliders['center_delay_ms'].get_value()
+        return params
 
     def set_parameters(self, params):
         for key, value in params.items():

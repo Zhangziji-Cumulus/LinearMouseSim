@@ -92,9 +92,17 @@ class SteeringAlgorithm:
         self.center_hold_ms = kwargs.get('center_hold_ms', 100)            # 中心检测保持时长（ms）
         self.center_release_threshold = kwargs.get('center_release_threshold', 200)  # 释放位移阈值
 
+        # 方向盘回中参数
+        # 与辅助回中不同，方向盘回中是持续回中，让方向盘自动回到中心位置
+        self.center_enabled = kwargs.get('center_enabled', True)   # 是否启用方向盘回中
+        self.center_mode = kwargs.get('center_mode', 1)            # 回中模式：0=延迟, 1=立即, 2=持续
+        self.center_speed_mode = kwargs.get('center_speed_mode', 0)  # 回中速度模式：0=固定, 1=动态
+        self.center_speed = kwargs.get('center_speed', 0.05)       # 回中速度（固定速度时的缩减比例）
+        self.center_delay_ms = kwargs.get('center_delay_ms', 200)  # 回中延迟时间（毫秒）
+
         # 临时半灵敏度模式
         self._temp_sensitivity_half = False
-        
+
         # 状态变量
         self.previous_angle = 0.0
         self.accumulated_x = 0.0
@@ -103,6 +111,10 @@ class SteeringAlgorithm:
         self._assist_from_direction = 0    # 进入辅助时的 delta_x 方向
         self._hold_delta_sum = 0           # 中心检测态累计位移
         self._hold_start_time = 0          # 中心检测态开始时间
+
+        # 方向盘回中状态
+        self._center_last_move_time = 0    # 上次鼠标移动时间
+        self._center_delay_active = False  # 延迟回中是否激活
 
         # 预计算 accumulated_x 的有效上限
         # 超过此值后 _apply_mapping 已返回 max_angle，再多累积也没用
@@ -161,6 +173,8 @@ class SteeringAlgorithm:
         self._reversal_sum = 0
         self._reversal_start_time = 0
         self._reversal_direction = 0
+        self._center_last_move_time = 0
+        self._center_delay_active = False
 
     def set_temp_half_sensitivity(self, enabled: bool):
         """设置临时半灵敏度模式（按住键时灵敏度减半）"""
@@ -214,6 +228,16 @@ class SteeringAlgorithm:
             self.center_hold_ms = max(0, value)
         elif param_name == 'center_release_threshold':
             self.center_release_threshold = max(0.0, value)
+        elif param_name == 'center_enabled':
+            self.center_enabled = bool(value)
+        elif param_name == 'center_mode':
+            self.center_mode = max(0, min(2, value))
+        elif param_name == 'center_speed_mode':
+            self.center_speed_mode = max(0, min(1, value))
+        elif param_name == 'center_speed':
+            self.center_speed = max(0.01, min(0.5, value))
+        elif param_name == 'center_delay_ms':
+            self.center_delay_ms = max(0, min(1000, value))
         elif param_name == 'linear_end':
             self.linear_end = max(1, value)
             self._max_useful_acc = self._compute_max_useful_acc()
@@ -436,6 +460,48 @@ class SteeringAlgorithm:
         # 步骤3：回正衰减（如果鼠标停止移动）
         if not is_moving and self.return_speed > 0:
             self.accumulated_x *= (1 - self.return_speed)
+
+        # 步骤3.5：方向盘回中
+        now = time.monotonic()
+        if is_moving:
+            self._center_last_move_time = now
+            self._center_delay_active = False
+
+        if self.center_enabled:
+            if self.center_mode == 2:  # 持续回中
+                if abs(self.accumulated_x) > 0.01:
+                    if self.center_speed_mode == 0:  # 固定速度
+                        self.accumulated_x *= (1.0 - self.center_speed)
+                    else:  # 动态速度
+                        # 角度越大回中越快
+                        angle_ratio = abs(self.accumulated_x) / self._max_useful_acc
+                        dynamic_speed = self.center_speed * (1.0 + angle_ratio)
+                        dynamic_speed = min(dynamic_speed, 0.5)
+                        self.accumulated_x *= (1.0 - dynamic_speed)
+            elif self.center_mode == 0:  # 延迟回中
+                if not is_moving and abs(self.accumulated_x) > 0.01:
+                    elapsed_ms = (now - self._center_last_move_time) * 1000
+                    if elapsed_ms >= self.center_delay_ms:
+                        if self.center_speed_mode == 0:  # 固定速度
+                            self.accumulated_x *= (1.0 - self.center_speed)
+                        else:  # 动态速度
+                            angle_ratio = abs(self.accumulated_x) / self._max_useful_acc
+                            dynamic_speed = self.center_speed * (1.0 + angle_ratio)
+                            dynamic_speed = min(dynamic_speed, 0.5)
+                            self.accumulated_x *= (1.0 - dynamic_speed)
+            elif self.center_mode == 1:  # 立即回中
+                if not is_moving and abs(self.accumulated_x) > 0.01:
+                    if self.center_speed_mode == 0:  # 固定速度
+                        self.accumulated_x *= (1.0 - self.center_speed)
+                    else:  # 动态速度
+                        angle_ratio = abs(self.accumulated_x) / self._max_useful_acc
+                        dynamic_speed = self.center_speed * (1.0 + angle_ratio)
+                        dynamic_speed = min(dynamic_speed, 0.5)
+                        self.accumulated_x *= (1.0 - dynamic_speed)
+
+        # accumulated_x 接近 0 时清零
+        if abs(self.accumulated_x) < 0.01:
+            self.accumulated_x = 0.0
         
         # 限制 accumulated_x 不超过有效上限
         # 避免超出后角度不再增大，但回打时仍需消化多余累积位移导致手感卡顿

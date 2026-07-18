@@ -30,7 +30,12 @@ DEFAULT_CONFIG = {
         'assist_rate_window': 0.10,
         'near_center_threshold': 50,
         'center_hold_ms': 100,
-        'center_release_threshold': 200
+        'center_release_threshold': 200,
+        'center_mode': 1,
+        'center_speed_mode': 0,
+        'center_speed': 0.05,
+        'center_delay_ms': 200,
+        'center_enabled': True
     },
     'three_zone': {
         'deadzone_start': 0,
