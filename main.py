@@ -5,6 +5,7 @@ import atexit
 import signal
 import ctypes
 import ctypes.wintypes
+import webbrowser
 
 from core import (
     get_mouse_position,
@@ -260,6 +261,29 @@ class LinearMouseSim:
             time.sleep(interval)
     
     def run(self):
+        # 检测 ViGEmBus 驱动
+        from core.vgamepad_output import is_vigembus_installed, VIGEMBUS_DOWNLOAD_URL
+        import tkinter as tk
+        from tkinter import messagebox
+
+        if not is_vigembus_installed():
+            # ViGEmBus 驱动未安装，提示用户
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+
+            result = messagebox.askyesno(
+                "ViGEmBus 驱动未安装",
+                "检测到 ViGEmBus 驱动未安装，虚拟手柄功能将不可用。\n\n"
+                "是否打开浏览器下载驱动？\n"
+                "（下载后需要安装驱动并重启程序）\n\n"
+                "点击[否]将继续使用模拟模式（无虚拟手柄输出）"
+            )
+
+            if result:
+                webbrowser.open(VIGEMBUS_DOWNLOAD_URL)
+            root.destroy()
+
         self.vjoy.initialize()
         controller_available = self.vjoy.is_initialized()
 

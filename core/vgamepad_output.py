@@ -5,12 +5,40 @@ ViGEmBus 虚拟手柄输出模块（基于 vgamepad）
 使游戏原生识别为手柄操作，无需额外配置。
 """
 
+import os
+import webbrowser
+
 try:
     import vgamepad as vg
     VGAMEPAD_AVAILABLE = True
 except ImportError:
     vg = None
     VGAMEPAD_AVAILABLE = False
+
+
+def check_vigembus_driver():
+    """检测 ViGEmBus 驱动是否已安装"""
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Services\ViGEmBus')
+        winreg.CloseKey(key)
+        return True
+    except WindowsError:
+        return False
+
+
+def check_vigembus_driver_file():
+    """检测 ViGEmBus 驱动文件"""
+    driver_path = r'C:\Windows\System32\drivers\ViGEmBus.sys'
+    return os.path.exists(driver_path)
+
+
+def is_vigembus_installed():
+    """综合检测 ViGEmBus 驱动是否已安装"""
+    return check_vigembus_driver() or check_vigembus_driver_file()
+
+
+VIGEMBUS_DOWNLOAD_URL = "https://github.com/ViGEm/ViGEmBus/releases"
 
 
 class VGamepadOutput:

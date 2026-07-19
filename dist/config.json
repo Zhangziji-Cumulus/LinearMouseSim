@@ -1,0 +1,107 @@
+{
+  "hotkeys": {
+    "toggle": "}",
+    "increase_sensitivity": "+",
+    "decrease_sensitivity": "-",
+    "reset_steering": "0",
+    "sensitivity_preset_1": "f5",
+    "sensitivity_preset_2": "f6",
+    "sensitivity_preset_3": "f7",
+    "cycle_curve": "f8",
+    "wheel_adjust": "ctrl",
+    "temp_sensitivity_half": "shift"
+  },
+  "steering": {
+    "sensitivity": 0.2,
+    "smoothing_factor": 0.25,
+    "deadzone": 0,
+    "max_angle": 180,
+    "return_speed": 0.0,
+    "curve_type": "linear",
+    "exponential_power": 1.8,
+    "reverse_direction": false,
+    "assist_threshold": 30,
+    "assist_return_rate": 0.15,
+    "assist_rate_threshold": 50,
+    "assist_rate_window": 0.02,
+    "near_center_threshold": 50,
+    "center_hold_ms": 100,
+    "center_release_threshold": 200,
+    "center_mode": 1,
+    "center_speed_mode": 0,
+    "center_speed": 0.05,
+    "center_delay_ms": 200,
+    "center_enabled": false
+  },
+  "three_zone": {
+    "deadzone_start": 0,
+    "deadzone_end": 3,
+    "linear_start": 3,
+    "linear_end": 500,
+    "saturation_start": 500,
+    "saturation_end": 1000
+  },
+  "mouse": {
+    "dpi": 800,
+    "enable_y_filter": true
+  },
+  "app": {
+    "auto_start": false,
+    "start_minimized": false,
+    "tray_icon": true,
+    "osd_enabled": true,
+    "osd_duration": 2000,
+    "sensitivity_presets": [
+      1.0,
+      2.0,
+      3.0
+    ],
+    "sensitivity_step": 0.1,
+    "wheel_sensitivity_factor": 0.1,
+    "main_loop_interval": 0.005,
+    "hotkey_cooldown_ms": 200
+  },
+  "user_presets": {
+    "preset_1784391151753": {
+      "name": "用户预设1",
+      "description": "",
+      "created_at": "2026-07-19T00:12:31",
+      "config": {
+        "steering": {
+          "sensitivity": 0.2,
+          "smoothing_factor": 0.25,
+          "deadzone": 0,
+          "max_angle": 180,
+          "return_speed": 0.0,
+          "curve_type": "linear",
+          "exponential_power": 1.8,
+          "reverse_direction": false,
+          "assist_threshold": 30,
+          "assist_return_rate": 0.15,
+          "assist_rate_threshold": 50,
+          "assist_rate_window": 0.02,
+          "near_center_threshold": 50,
+          "center_hold_ms": 100,
+          "center_release_threshold": 200,
+          "center_mode": 1,
+          "center_speed_mode": 0,
+          "center_speed": 0.05,
+          "center_delay_ms": 200,
+          "center_enabled": false
+        },
+        "three_zone": {
+          "deadzone_start": 0,
+          "deadzone_end": 3,
+          "linear_start": 3,
+          "linear_end": 500,
+          "saturation_start": 500,
+          "saturation_end": 1000
+        },
+        "mouse": {
+          "dpi": 800,
+          "enable_y_filter": true
+        }
+      }
+    }
+  }
+}

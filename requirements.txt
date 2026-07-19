@@ -1,0 +1,5 @@
+keyboard==0.13.5
+pillow==12.3.0
+pyvjoy==1.0.1
+vgamepad==0.1.0
+pyinstaller

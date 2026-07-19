@@ -1,6 +1,7 @@
 import json
 import os
 import copy
+import sys
 
 DEFAULT_CONFIG = {
     'hotkeys': {
@@ -67,11 +68,17 @@ DEFAULT_CONFIG = {
 class ConfigManager:
     def __init__(self, config_file=None):
         if config_file is None:
-            self.config_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            # 打包后使用 EXE 所在目录，开发时使用项目根目录
+            if getattr(sys, 'frozen', False):
+                # 打包后的 EXE
+                self.config_dir = os.path.dirname(sys.executable)
+            else:
+                # 开发环境
+                self.config_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             self.config_file = os.path.join(self.config_dir, 'config.json')
         else:
             self.config_file = config_file
-        
+
         self.config = self._load_config()
     
     def _load_config(self):

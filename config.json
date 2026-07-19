@@ -61,6 +61,7 @@
     "main_loop_interval": 0.005,
     "hotkey_cooldown_ms": 200
   },
+<<<<<<< HEAD
   "user_presets": {
     "preset_1784387600998": {
       "name": "用户预设1",
@@ -145,4 +146,7 @@
       }
     }
   }
+=======
+  "user_presets": {}
+>>>>>>> b84ffdfa2ed83367193d9a3e29763089dc731396
 }
