@@ -1,4 +1,5 @@
 import sys
+import os
 import time
 import threading
 import atexit
@@ -27,13 +28,39 @@ def check_single_instance():
     kernel32 = ctypes.windll.kernel32
     h_mutex = kernel32.CreateMutexW(None, False, MUTEX_NAME)
     last_error = kernel32.GetLastError()
-    
+
     if last_error == 183:
         kernel32.CloseHandle(h_mutex)
         return False
-    
+
     _h_mutex = h_mutex
     return True
+
+def is_admin():
+    """检查当前是否以管理员权限运行"""
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+def request_admin():
+    """请求以管理员权限重新启动程序，确保全局热键正常工作"""
+    if not is_admin():
+        try:
+            script = sys.executable
+            if getattr(sys, 'frozen', False):
+                script = sys.executable
+            else:
+                script = os.path.abspath(sys.argv[0])
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", sys.executable, f'"{script}"', None, 1
+            )
+            if result > 32:
+                # UAC 已接受，新进程已启动，退出当前进程
+                sys.exit(0)
+            # result <= 32: 用户拒绝提权或出错，继续运行（热键可能受限）
+        except Exception:
+            pass
 
 def close_mutex():
     global _h_mutex
@@ -332,6 +359,8 @@ class LinearMouseSim:
             self.main_window.tray_manager.cleanup()
 
 if __name__ == '__main__':
+    request_admin()
+
     if not check_single_instance():
         print("程序已在运行中，同一时间只能启动一个实例。")
         import tkinter as tk

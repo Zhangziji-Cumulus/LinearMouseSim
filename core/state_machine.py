@@ -1,7 +1,7 @@
 import time
 import threading
 from enum import Enum
-from .mouse_capture import get_mouse_position, set_mouse_position, get_screen_center, ClipCursorManager, release_cursor_safety
+from .mouse_capture import get_mouse_position, set_mouse_position, get_screen_center, ClipCursorManager, release_cursor_safety, show_cursor, hide_cursor
 
 
 class SimulationState(Enum):
@@ -17,7 +17,8 @@ class SteeringStateMachine:
         self.base_y = 0
         self.current_angle = 0.0
         self.cursor_manager = ClipCursorManager()
-        self.center_x, self.center_y = get_screen_center()
+        self.center_x, _ = get_screen_center()
+        self.center_y = 1  # 锁定在屏幕顶部中间，防止遮挡游戏视野
         self.lock_thread = None
         self.running = False
         self.mouse_moved = False
@@ -40,8 +41,8 @@ class SteeringStateMachine:
         self.running = False
         with self.state_lock:
             self._turning_off = True
-        self.cursor_manager.unlock()
         release_cursor_safety()
+        show_cursor()
         self.turn_off()
     
     def _cursor_lock_loop(self):
@@ -78,6 +79,8 @@ class SteeringStateMachine:
 
             self.state = SimulationState.ON
             self.vjoy_output.set_steering_angle(0)
+            # 只隐藏光标，不使用 ClipCursor（会阻止 delta 检测）
+            hide_cursor()
             print("模拟已开启")
     
     def turn_off(self):
@@ -88,11 +91,11 @@ class SteeringStateMachine:
             self.state = SimulationState.OFF
             self._turning_off = True
         
-        self.cursor_manager.unlock()
+        show_cursor()
         release_cursor_safety()
-        
+
         time.sleep(0.02)
-        
+
         set_mouse_position(self.original_cursor_x, self.original_cursor_y)
         
         self.vjoy_output.reset()

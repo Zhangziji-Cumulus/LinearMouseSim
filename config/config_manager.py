@@ -5,7 +5,7 @@ import sys
 
 DEFAULT_CONFIG = {
     'hotkeys': {
-        'toggle': '}' ,
+        'toggle': 'o',
         'increase_sensitivity': '+',
         'decrease_sensitivity': '-',
         'reset_steering': '0',

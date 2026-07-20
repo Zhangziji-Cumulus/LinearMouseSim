@@ -22,7 +22,7 @@ def get_screen_center():
 class ClipCursorManager:
     def __init__(self):
         self.original_rect = ctypes.wintypes.RECT()
-    
+
     def lock_to_center(self):
         center_x, center_y = get_screen_center()
         rect = ctypes.wintypes.RECT()
@@ -32,11 +32,18 @@ class ClipCursorManager:
         rect.bottom = center_y + 1
         user32.GetClipCursor(ctypes.byref(self.original_rect))
         user32.ClipCursor(ctypes.byref(rect))
-    
+
     def unlock(self):
         user32.ClipCursor(ctypes.byref(self.original_rect))
 
+def show_cursor():
+    """显示鼠标光标"""
+    user32.ShowCursor(True)
+
+def hide_cursor():
+    """隐藏鼠标光标"""
+    user32.ShowCursor(False)
+
 def release_cursor_safety():
-    null_rect = ctypes.wintypes.RECT()
-    null_rect.left = null_rect.top = null_rect.right = null_rect.bottom = 0
+    user32.ShowCursor(True)
     user32.ClipCursor(None)
